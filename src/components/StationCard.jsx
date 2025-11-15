@@ -10,6 +10,7 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
   const [isDone, setIsDone] = useState(station.isDone || false)
   const [showNameInput, setShowNameInput] = useState(false)
   const [customerNameInput, setCustomerNameInput] = useState('')
+  const [startTime, setStartTime] = useState(null)
   const nameInputRef = useRef(null)
   const intervalRef = useRef(null)
   const milestone1Hour = useRef(false)
@@ -116,15 +117,26 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
 
   const handleStart = () => {
     if (!isRunning && !showNameInput) {
+      // Capture the start time
+      const now = new Date()
+      const timeString = now.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: true 
+      })
+      
       // If customer name already exists, start directly
       if (station.customerName && station.customerName.trim() !== '') {
         setIsRunning(true)
         onUpdate({
           ...station,
           isRunning: true,
+          startTime: timeString,
         })
       } else {
         // Show name input field if no name exists
+        // Store start time temporarily until name is saved
+        setStartTime(timeString)
         setShowNameInput(true)
         setCustomerNameInput('')
         // Focus the input after a brief delay to allow animation
@@ -145,15 +157,17 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
       nameInputRef.current?.focus()
       return
     }
-    // Update station with customer name and start timer
+    // Update station with customer name, start time, and start timer
     onUpdate({
       ...station,
       customerName: trimmedName,
+      startTime: startTime, // Save the start time to station
       isRunning: true,
     })
     setIsRunning(true)
     setShowNameInput(false)
     setCustomerNameInput('')
+    setStartTime(null)
   }
 
   const handleNameSubmit = (e) => {
@@ -164,20 +178,23 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
       nameInputRef.current?.focus()
       return
     }
-    // Update station with customer name and start
+    // Update station with customer name, start time, and start
     onUpdate({
       ...station,
       customerName: trimmedName,
+      startTime: startTime, // Save the start time to station
       isRunning: true,
     })
     setIsRunning(true)
     setShowNameInput(false)
     setCustomerNameInput('')
+    setStartTime(null)
   }
 
   const handleNameCancel = () => {
     setShowNameInput(false)
     setCustomerNameInput('')
+    setStartTime(null)
   }
 
   const handlePause = () => {
@@ -197,7 +214,7 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
     milestone1Hour.current = false
     milestone2Hours.current = false
     milestone3Hours.current = false
-    // Also reset extra controllers, snacks, and customer name
+    // Also reset extra controllers, snacks, customer name, start time, and end time
     onUpdate({
       ...station,
       elapsedTime: 0,
@@ -206,12 +223,30 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
       extraControllers: 0,
       snacks: { cokeBottle: 0, cokeCan: 0 },
       customerName: '',
+      startTime: null,
+      endTime: null,
     })
   }
 
   const handleDone = () => {
     setIsRunning(false)
     setIsDone(true)
+    // Capture the end time when Done is clicked
+    const now = new Date()
+    const timeString = now.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    })
+    onUpdate({
+      ...station,
+      isDone: true,
+      isRunning: false,
+      endTime: timeString,
+    })
+    // Announce completion
+    const completionMessage = `${station.name} completed`
+    playAlarm(completionMessage, false)
   }
 
   const handleExtraControllerChange = (e) => {
@@ -271,7 +306,9 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
               isRunning ? 'bg-green-500 neon-green animate-pulse' : 
               `bg-${gameColor}-400`
             }`}></div>
-            <h3 className={`text-sm font-bold text-${gameColor}-400 truncate`} style={{ fontFamily: 'Orbitron, sans-serif' }}>{station.name}</h3>
+            <h3 className={`text-sm font-bold text-${gameColor}-400 truncate`} style={{ fontFamily: 'Orbitron, sans-serif' }}>
+              {station.name} - {currentRate}Rs/hr
+            </h3>
             {isDone && (
               <span className="text-[10px] bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded font-semibold uppercase tracking-wider border border-orange-500/30" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Done</span>
             )}
@@ -279,9 +316,18 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
           {station.customerName && (
             <p className="text-xs text-slate-400 mt-1 font-semibold" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
               👤 {station.customerName}
+              {station.startTime && (
+                <span className={`ml-2 text-${gameColor}-300`}>
+                  🕐 {station.startTime}
+                </span>
+              )}
+              {station.endTime && (
+                <span className={`ml-2 text-orange-300`}>
+                  🕐 {station.endTime}
+                </span>
+              )}
             </p>
           )}
-          <p className={`text-xs text-${gameColor}-400 mt-1 font-semibold`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>{currentRate}Rs/hr</p>
         </div>
         {station.id > 7 && (
           <button
@@ -296,25 +342,37 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
 
       {/* Customer Name Input - Animated */}
       {showNameInput && (
-        <div className={`mb-3 bg-slate-800/70 border-2 border-${gameColor}-500/50 rounded-lg p-3 animate-in fade-in slide-in-from-top-2 duration-300 relative z-10 shadow-xl`}>
+        <div className={`mb-3 bg-gradient-to-br from-slate-800/90 to-slate-900/90 border border-${gameColor}-500/30 rounded-xl p-4 animate-in fade-in slide-in-from-top-2 duration-300 relative z-10 shadow-2xl backdrop-blur-sm`}>
           <form onSubmit={handleNameSave} className="w-full">
-            <label className={`block text-xs font-bold text-${gameColor}-400 mb-2 uppercase tracking-wider`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>
-              👤 Customer Name
-            </label>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className={`w-8 h-8 rounded-lg bg-${gameColor}-500/20 flex items-center justify-center`}>
+                  <span className="text-lg">👤</span>
+                </div>
+                <div>
+                  <label className={`block text-sm font-bold text-${gameColor}-400 uppercase tracking-wide`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+                    Customer Name
+                  </label>
+                  {startTime && (
+                    <span className={`text-xs font-medium text-${gameColor}-300/80 mt-0.5 block`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+                      🕐 Started: {startTime}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
             <div className="flex items-center gap-2 w-full">
               <input
                 ref={nameInputRef}
                 type="text"
                 value={customerNameInput}
                 onChange={(e) => setCustomerNameInput(e.target.value)}
-                placeholder="Enter name..."
-                className={`flex-1 px-3 py-2.5 text-sm border-2 border-${gameColor}-500/40 rounded-lg bg-slate-900/70 text-slate-200 focus:outline-none focus:ring-2 focus:ring-${gameColor}-500/70 focus:border-${gameColor}-500 font-semibold transition-all placeholder:text-slate-500`}
-                style={{ fontFamily: 'Rajdhani, sans-serif' }}
+                placeholder="Enter customer name..."
+                className={`w-36 px-4 py-3 text-base border border-${gameColor}-500/30 rounded-xl bg-slate-900/50 text-slate-100 focus:outline-none focus:ring-2 focus:ring-${gameColor}-500/50 focus:border-${gameColor}-500 font-medium transition-all duration-200 placeholder:text-slate-500/60 backdrop-blur-sm`}
+                style={{ fontFamily: 'Rajdhani, sans-serif', height: '48px', boxSizing: 'border-box' }}
                 autoFocus
                 onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    handleNameCancel()
-                  } else if (e.key === 'Enter') {
+                  if (e.key === 'Enter') {
                     e.preventDefault()
                     handleNameSave(e)
                   }
@@ -323,19 +381,11 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
               <button
                 type="submit"
                 disabled={!customerNameInput.trim()}
-                className={`px-5 py-2.5 bg-gradient-to-r from-${gameColor}-500 to-${gameColor === 'cyan' ? 'blue' : gameColor === 'purple' ? 'pink' : 'rose'}-500 hover:from-${gameColor}-400 hover:to-${gameColor === 'cyan' ? 'blue' : gameColor === 'purple' ? 'pink' : 'rose'}-400 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 disabled:hover:scale-100 flex items-center justify-center gap-1.5 whitespace-nowrap`}
+                className={`w-12 h-12 bg-gradient-to-r from-${gameColor}-500 via-${gameColor === 'cyan' ? 'blue' : gameColor === 'purple' ? 'pink' : 'rose'}-500 to-${gameColor === 'cyan' ? 'blue' : gameColor === 'purple' ? 'pink' : 'rose'}-600 hover:from-${gameColor}-400 hover:via-${gameColor === 'cyan' ? 'blue' : gameColor === 'purple' ? 'pink' : 'rose'}-400 hover:to-${gameColor === 'cyan' ? 'blue' : gameColor === 'purple' ? 'pink' : 'rose'}-500 disabled:from-slate-700 disabled:via-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-[1.02] disabled:hover:scale-100 flex items-center justify-center flex-shrink-0`}
                 style={{ fontFamily: 'Rajdhani, sans-serif' }}
+                title="Save"
               >
-                ✓ OK
-              </button>
-              <button
-                type="button"
-                onClick={handleNameCancel}
-                className="px-3 py-2.5 bg-slate-700/70 hover:bg-slate-700 text-slate-300 rounded-lg font-bold text-sm border-2 border-slate-600 hover:border-slate-500 transition-all duration-200 hover:scale-105 flex items-center justify-center"
-                style={{ fontFamily: 'Rajdhani, sans-serif' }}
-                title="Cancel"
-              >
-                ✕
+                <span className="text-2xl font-bold">✓</span>
               </button>
             </div>
           </form>

@@ -80,6 +80,7 @@ const InvoiceViewer = ({ invoice, onClose }) => {
                     <th className="text-left py-4 px-8 font-medium text-gray-600 text-sm tracking-wide">Station</th>
                     <th className="text-left py-4 px-8 font-medium text-gray-600 text-sm tracking-wide">Customer</th>
                     <th className="text-left py-4 px-8 font-medium text-gray-600 text-sm tracking-wide">Type</th>
+                    <th className="text-left py-4 px-8 font-medium text-gray-600 text-sm tracking-wide">Time Period</th>
                     <th className="text-right py-4 px-8 font-medium text-gray-600 text-sm tracking-wide">Time</th>
                     <th className="text-right py-4 px-8 font-medium text-gray-600 text-sm tracking-wide">Amount</th>
                   </tr>
@@ -111,6 +112,19 @@ const InvoiceViewer = ({ invoice, onClose }) => {
                         </td>
                         <td className="py-5 px-8">
                           <div className="font-light text-gray-600 text-base">{gameType}</div>
+                        </td>
+                        <td className="py-5 px-8">
+                          <div className="font-light text-gray-600 text-sm">
+                            {station.startTime && (
+                              <div>🕐 Start: {station.startTime}</div>
+                            )}
+                            {station.endTime && (
+                              <div className="mt-1">🕐 End: {station.endTime}</div>
+                            )}
+                            {!station.startTime && !station.endTime && (
+                              <div>-</div>
+                            )}
+                          </div>
                         </td>
                         <td className="py-5 px-8 text-right">
                           <div className="font-light text-gray-600 text-base">{formatTime(elapsed)}</div>
@@ -152,6 +166,13 @@ const InvoiceViewer = ({ invoice, onClose }) => {
                       <h3 className="text-lg font-medium text-gray-900 mb-2">{station.name}</h3>
                       <p className="text-gray-500 text-sm font-light">Customer: {station.customerName || 'N/A'}</p>
                       <p className="text-gray-500 text-sm font-light">Type: {gameType}</p>
+                      {(station.startTime || station.endTime) && (
+                        <div className="text-gray-500 text-sm font-light mt-1">
+                          {station.startTime && <span>🕐 Start: {station.startTime}</span>}
+                          {station.startTime && station.endTime && <span className="mx-2">•</span>}
+                          {station.endTime && <span>🕐 End: {station.endTime}</span>}
+                        </div>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="text-gray-400 text-xs font-medium mb-1 tracking-wide uppercase">Total Time</p>
@@ -223,9 +244,46 @@ const InvoiceViewer = ({ invoice, onClose }) => {
 
           {/* Total Section */}
           <div className="flex justify-end pt-8 border-t border-gray-200">
-            <div className="text-right">
-              <p className="text-gray-400 text-sm font-medium mb-2 tracking-wide uppercase">Total Amount</p>
-              <p className="text-4xl font-light text-gray-900" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>{invoice.total}Rs</p>
+            <div className="text-right w-full max-w-md">
+              {(() => {
+                const subtotal = invoice.stations.reduce((sum, station) => {
+                  const elapsed = station.elapsedTime || 0
+                  const gameType = station.gameType || 'PlayStation'
+                  const extraControllers = station.extraControllers || 0
+                  const snacks = station.snacks || {}
+                  const cokeBottleCount = snacks.cokeBottle || 0
+                  const cokeCanCount = snacks.cokeCan || 0
+                  const baseRate = getRate(gameType)
+                  const paidHours = calculatePaidHours(elapsed, gameType)
+                  const baseCost = paidHours * baseRate
+                  const extraControllerCost = extraControllers * getExtraControllerRate()
+                  const snacksCost = (cokeBottleCount * getCokeBottleRate()) + (cokeCanCount * getCokeCanRate())
+                  return sum + baseCost + extraControllerCost + snacksCost
+                }, 0)
+                const discount = invoice.discount || 0
+                const finalTotal = invoice.total
+                
+                return (
+                  <>
+                    <div className="flex justify-between items-center mb-2">
+                      <p className="text-gray-400 text-sm font-medium tracking-wide uppercase">Subtotal</p>
+                      <p className="text-gray-900 text-lg font-light">{subtotal}Rs</p>
+                    </div>
+                    {discount > 0 && (
+                      <div className="flex justify-between items-center mb-2">
+                        <p className="text-gray-400 text-sm font-medium tracking-wide uppercase">Discount</p>
+                        <p className="text-orange-600 text-lg font-light">-{discount}Rs</p>
+                      </div>
+                    )}
+                    <div className="pt-4 border-t border-gray-300 mt-4">
+                      <div className="flex justify-between items-center">
+                        <p className="text-gray-400 text-sm font-medium tracking-wide uppercase">Total Amount</p>
+                        <p className="text-4xl font-light text-gray-900" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>{finalTotal}Rs</p>
+                      </div>
+                    </div>
+                  </>
+                )
+              })()}
             </div>
           </div>
           

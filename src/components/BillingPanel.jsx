@@ -5,6 +5,7 @@ import { calculateCost, getRate, GAME_TYPES, getDayType, calculatePaidHours, get
 const BillingPanel = ({ stations, onGenerateInvoice }) => {
   const [selectedStations, setSelectedStations] = useState([])
   const [highlightedStations, setHighlightedStations] = useState([])
+  const [discount, setDiscount] = useState(0)
   const previousDoneStations = useRef(new Set())
   
   // Auto-select stations when they are marked as done
@@ -56,7 +57,7 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
     )
   }
 
-  const getTotalCost = () => {
+  const getSubtotal = () => {
     return selectedStations.reduce((total, stationId) => {
       const station = stations.find((s) => s.id === stationId)
       if (!station) return total
@@ -71,10 +72,17 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
     }, 0)
   }
 
+  const getTotalCost = () => {
+    const subtotal = getSubtotal()
+    const discountAmount = parseFloat(discount) || 0
+    return Math.max(0, subtotal - discountAmount)
+  }
+
   const handleGenerateInvoice = () => {
     const invoiceStations = stations.filter((s) => selectedStations.includes(s.id))
-    onGenerateInvoice(invoiceStations, getTotalCost())
+    onGenerateInvoice(invoiceStations, getTotalCost(), parseFloat(discount) || 0)
     setSelectedStations([])
+    setDiscount(0)
   }
 
   return (
@@ -162,6 +170,16 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
                   {station.customerName && (
                     <div className="text-xs text-slate-400 font-semibold mt-0.5" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
                       👤 {station.customerName}
+                      {station.startTime && (
+                        <span className="ml-2 text-cyan-300">
+                          🕐 {station.startTime}
+                        </span>
+                      )}
+                      {station.endTime && (
+                        <span className="ml-2 text-orange-300">
+                          🕐 {station.endTime}
+                        </span>
+                      )}
                     </div>
                   )}
                   <div className="text-xs text-slate-500 font-semibold" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
@@ -219,13 +237,48 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
       </div>
 
         <div className="border-t border-slate-700/50 pt-5 mt-5">
-          <div className="flex justify-between items-center mb-5 bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
-            <span className="text-sm font-semibold text-slate-400" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Total:</span>
-            <span className="text-3xl font-bold text-green-400 neon-green" style={{ 
-              fontFamily: 'Orbitron, sans-serif'
-            }}>
-              {getTotalCost()}Rs
-            </span>
+          <div className="space-y-3 mb-5">
+            <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-lg border border-purple-500/20">
+              <span className="text-sm font-semibold text-slate-400" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Subtotal:</span>
+              <span className="text-xl font-bold text-slate-300" style={{ 
+                fontFamily: 'Orbitron, sans-serif'
+              }}>
+                {getSubtotal()}Rs
+              </span>
+            </div>
+            
+            <div className="bg-slate-800/50 p-3 rounded-lg border border-purple-500/20">
+              <label className="block text-xs font-semibold text-purple-400 mb-2 uppercase tracking-wider" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+                💰 Discount / Adjustment
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                  placeholder="0"
+                  min="0"
+                  step="0.01"
+                  className="flex-1 px-3 py-2 bg-slate-900/70 border border-purple-500/30 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 font-semibold text-sm transition-all"
+                  style={{ fontFamily: 'Rajdhani, sans-serif' }}
+                />
+                <span className="text-sm font-semibold text-slate-400" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Rs</span>
+              </div>
+              {discount > 0 && (
+                <div className="mt-2 text-xs text-orange-400 font-semibold" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+                  -{parseFloat(discount) || 0}Rs discount applied
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between items-center bg-slate-800/50 p-4 rounded-lg border border-green-500/30">
+              <span className="text-sm font-semibold text-slate-400" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Final Total:</span>
+              <span className="text-3xl font-bold text-green-400 neon-green" style={{ 
+                fontFamily: 'Orbitron, sans-serif'
+              }}>
+                {getTotalCost()}Rs
+              </span>
+            </div>
           </div>
           <button
             onClick={handleGenerateInvoice}

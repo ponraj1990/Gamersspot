@@ -4,6 +4,7 @@ import BillingPanel from './components/BillingPanel'
 import InvoiceViewer from './components/InvoiceViewer'
 import PricingConfig from './components/PricingConfig'
 import { loadStations, saveStations } from './utils/storage'
+import { invoicesAPI } from './utils/api'
 import { GAME_TYPES, calculateCost } from './utils/pricing'
 
 function App() {
@@ -12,10 +13,12 @@ function App() {
   const [showPricingConfig, setShowPricingConfig] = useState(false)
 
   useEffect(() => {
-    const savedStations = loadStations()
-    if (savedStations.length > 0) {
-      setStations(savedStations)
-    } else {
+    const fetchStations = async () => {
+      try {
+        const savedStations = await loadStations()
+        if (savedStations.length > 0) {
+          setStations(savedStations)
+        } else {
       const ps5Stations = Array.from({ length: 5 }, (_, i) => ({
         id: i + 1,
         name: `PS5 Station ${i + 1}`,
@@ -50,12 +53,56 @@ function App() {
       }
       
       setStations([...ps5Stations, steeringWheelStation, systemStation])
+        }
+      } catch (error) {
+        console.error('Error loading stations:', error)
+        // Fallback to default stations
+        const ps5Stations = Array.from({ length: 5 }, (_, i) => ({
+          id: i + 1,
+          name: `PS5 Station ${i + 1}`,
+          gameType: GAME_TYPES.PLAYSTATION,
+          elapsedTime: 0,
+          isRunning: false,
+          extraControllers: 0,
+          snacks: { cokeBottle: 0, cokeCan: 0 },
+          customerName: '',
+        }))
+        
+        const steeringWheelStation = {
+          id: 6,
+          name: 'Steering Wheel',
+          gameType: GAME_TYPES.STEERING_WHEEL,
+          elapsedTime: 0,
+          isRunning: false,
+          extraControllers: 0,
+          snacks: { cokeBottle: 0, cokeCan: 0 },
+          customerName: '',
+        }
+        
+        const systemStation = {
+          id: 7,
+          name: 'System Game',
+          gameType: GAME_TYPES.SYSTEM,
+          elapsedTime: 0,
+          isRunning: false,
+          extraControllers: 0,
+          snacks: { cokeBottle: 0, cokeCan: 0 },
+          customerName: '',
+        }
+        
+        setStations([...ps5Stations, steeringWheelStation, systemStation])
+      }
     }
+    
+    fetchStations()
   }, [])
 
   useEffect(() => {
     if (stations.length > 0) {
-      saveStations(stations)
+      // Save stations to database (async, non-blocking)
+      saveStations(stations).catch(error => {
+        console.error('Error saving stations:', error)
+      })
     }
   }, [stations])
 
@@ -127,14 +174,38 @@ function App() {
     )
   }
 
-  const handleGenerateInvoice = (invoiceStations, total) => {
+  const handleGenerateInvoice = async (invoiceStations, total, discount = 0) => {
     const invoiceNumber = `INV-${Date.now()}`
-    setInvoice({
+    const subtotal = invoiceStations.reduce((sum, station) => {
+      const elapsed = station.elapsedTime || 0
+      const gameType = station.gameType || GAME_TYPES.PLAYSTATION
+      return sum + calculateCost(elapsed, gameType, station.extraControllers || 0, station.snacks || {})
+    }, 0)
+    
+    const invoice = {
       invoiceNumber,
       stations: invoiceStations,
+      subtotal,
+      discount: discount || 0,
       total,
       date: new Date().toISOString(),
-    })
+    }
+    
+    // Save invoice to database
+    try {
+      await invoicesAPI.create({
+        invoiceNumber,
+        stations: invoiceStations,
+        subtotal,
+        discount: discount || 0,
+        total,
+      })
+    } catch (error) {
+      console.error('Failed to save invoice to database:', error)
+      // Continue anyway to show the invoice
+    }
+    
+    setInvoice(invoice)
   }
 
   const getCurrentDateAndDay = () => {
