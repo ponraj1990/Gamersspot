@@ -8,9 +8,12 @@ export const generateInvoicePDF = async (invoiceData, elementId = 'invoice-conte
   }
 
   const canvas = await html2canvas(element, {
-    scale: 2,
+    scale: 3,
     useCORS: true,
     logging: false,
+    backgroundColor: '#ffffff',
+    windowWidth: element.scrollWidth,
+    windowHeight: element.scrollHeight,
   })
 
   const imgData = canvas.toDataURL('image/png')

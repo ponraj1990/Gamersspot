@@ -66,20 +66,23 @@ export const playAlarm = async (messageOrStationName = null, isWarning = false) 
     const audioContext = new (window.AudioContext || window.webkitAudioContext)()
     
     if (messageOrStationName) {
-      // Check if it's a full message (contains "hour" or "bonus") or just station name
-      const isFullMessage = messageOrStationName.includes('hour') || messageOrStationName.includes('bonus')
+      // Check if it's a full message (contains "hour", "bonus", or "completed")
+      const isFullMessage = messageOrStationName.includes('hour') || 
+                           messageOrStationName.includes('bonus') || 
+                           messageOrStationName.includes('completed')
       
       if (isFullMessage) {
-        // Full milestone message (e.g., "PS5 Station 1 - 1 hour played, 15 minutes bonus time")
+        // Full milestone or minute completion message
         const message = messageOrStationName
         
-        // Play milestone alarm sound (volume 0.6)
-        await playAlarmSound(audioContext, 0.6)
+        // Play alarm sound - quieter for minute announcements, louder for hour milestones
+        const volume = messageOrStationName.includes('completed') ? 0.4 : 0.6
+        await playAlarmSound(audioContext, volume)
         
-        // Speak the milestone message
+        // Speak the message
         await speakText(message, 1.0)
       } else if (isWarning) {
-        // Warning message: "PS4 Station 1 will have 1 min left"
+        // Warning message: "PS5 Station 1 will have 1 min left"
         const message = `${messageOrStationName} will have 1 min left`
         
         // Play warning alarm sound (volume 0.5)

@@ -1,12 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import TimerDisplay from './TimerDisplay'
 import { formatTime } from '../utils/timer'
-import { calculateCost, calculatePaidHours, getBonusTime, GAME_TYPES, getPlayStationRate, getSystemRate } from '../utils/pricing'
+import { calculateCost, calculatePaidHours, getBonusTime, GAME_TYPES, getRate, getDayType, getCokeBottleRate, getCokeCanRate } from '../utils/pricing'
 import { playAlarm } from '../utils/alarm'
 
 const StationCard = ({ station, onUpdate, onDelete }) => {
   const [elapsedTime, setElapsedTime] = useState(station.elapsedTime || 0)
   const [isRunning, setIsRunning] = useState(station.isRunning || false)
+  const [isDone, setIsDone] = useState(station.isDone || false)
+  const [showNameInput, setShowNameInput] = useState(false)
+  const [customerNameInput, setCustomerNameInput] = useState('')
+  const nameInputRef = useRef(null)
   const intervalRef = useRef(null)
   const milestone1Hour = useRef(false)
   const milestone2Hours = useRef(false)
@@ -19,27 +23,46 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
           const newTime = prev + 1
           
           // Announce milestones for bonus time
+          // Note: PS5 and Steering Wheel games only get bonus time on weekdays (Monday-Friday)
           const hours = newTime / 3600
+          const gameType = station.gameType || GAME_TYPES.PLAYSTATION
+          const dayType = getDayType()
+          const isWeekendNoBonus = (gameType === GAME_TYPES.PLAYSTATION || gameType === GAME_TYPES.STEERING_WHEEL) && dayType === 'weekend'
           
-          // 1 hour milestone (3600 seconds)
+          // 1 hour milestone (3600 seconds) - only announce bonus on weekdays for PS5 and Steering Wheel
           if (hours >= 1 && !milestone1Hour.current) {
             milestone1Hour.current = true
-            const message = `${station.name} - 1 hour played, 15 minutes bonus time`
-            playAlarm(message, false)
+            if (isWeekendNoBonus) {
+              const message = `${station.name} - 1 hour played`
+              playAlarm(message, false)
+            } else {
+              const message = `${station.name} - 1 hour played, 15 minutes bonus time`
+              playAlarm(message, false)
+            }
           }
           
-          // 2 hours milestone (7200 seconds)
+          // 2 hours milestone (7200 seconds) - only announce bonus on weekdays for PS5 and Steering Wheel
           if (hours >= 2 && !milestone2Hours.current) {
             milestone2Hours.current = true
-            const message = `${station.name} - 2 hours played, 30 minutes bonus time`
-            playAlarm(message, false)
+            if (isWeekendNoBonus) {
+              const message = `${station.name} - 2 hours played`
+              playAlarm(message, false)
+            } else {
+              const message = `${station.name} - 2 hours played, 30 minutes bonus time`
+              playAlarm(message, false)
+            }
           }
           
-          // 3 hours milestone (10800 seconds)
+          // 3 hours milestone (10800 seconds) - only announce bonus on weekdays for PS5 and Steering Wheel
           if (hours >= 3 && !milestone3Hours.current) {
             milestone3Hours.current = true
-            const message = `${station.name} - 3 hours played, 1 hour bonus time`
-            playAlarm(message, false)
+            if (isWeekendNoBonus) {
+              const message = `${station.name} - 3 hours played`
+              playAlarm(message, false)
+            } else {
+              const message = `${station.name} - 3 hours played, 1 hour bonus time`
+              playAlarm(message, false)
+            }
           }
           
           return newTime
@@ -59,16 +82,102 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
     }
   }, [isRunning, station.name])
 
+  // Sync local state when station is reset from parent (only when explicitly reset via Reset All)
   useEffect(() => {
-    onUpdate({
-      ...station,
-      elapsedTime,
-      isRunning,
-    })
-  }, [elapsedTime, isRunning])
+    // Sync isDone state from parent
+    if (station.isDone !== undefined && station.isDone !== isDone) {
+      setIsDone(station.isDone)
+    }
+    
+    // Only sync reset if parent was explicitly reset: elapsedTime is 0, not running
+    // AND station is NOT done (done stations should not be reset)
+    // AND our local state doesn't match (we have time or are running)
+    if (!station.isDone && station.elapsedTime === 0 && !station.isRunning && (elapsedTime > 0 || isRunning || isDone)) {
+      setElapsedTime(0)
+      setIsRunning(false)
+      setIsDone(false)
+      milestone1Hour.current = false
+      milestone2Hours.current = false
+      milestone3Hours.current = false
+    }
+  }, [station.elapsedTime, station.isRunning, station.isDone])
+
+  useEffect(() => {
+    // Only update if values actually changed to prevent loops
+    if (station.elapsedTime !== elapsedTime || station.isRunning !== isRunning || station.isDone !== isDone) {
+      onUpdate({
+        ...station,
+        elapsedTime,
+        isRunning,
+        isDone,
+      })
+    }
+  }, [elapsedTime, isRunning, isDone, station])
 
   const handleStart = () => {
+    if (!isRunning && !showNameInput) {
+      // If customer name already exists, start directly
+      if (station.customerName && station.customerName.trim() !== '') {
+        setIsRunning(true)
+        onUpdate({
+          ...station,
+          isRunning: true,
+        })
+      } else {
+        // Show name input field if no name exists
+        setShowNameInput(true)
+        setCustomerNameInput('')
+        // Focus the input after a brief delay to allow animation
+        setTimeout(() => {
+          if (nameInputRef.current) {
+            nameInputRef.current.focus()
+          }
+        }, 100)
+      }
+    }
+  }
+
+  const handleNameSave = (e) => {
+    e.preventDefault()
+    const trimmedName = customerNameInput.trim()
+    if (trimmedName === '') {
+      // Empty name, show error and keep input open
+      nameInputRef.current?.focus()
+      return
+    }
+    // Update station with customer name and start timer
+    onUpdate({
+      ...station,
+      customerName: trimmedName,
+      isRunning: true,
+    })
     setIsRunning(true)
+    setShowNameInput(false)
+    setCustomerNameInput('')
+  }
+
+  const handleNameSubmit = (e) => {
+    e.preventDefault()
+    const trimmedName = customerNameInput.trim()
+    if (trimmedName === '') {
+      // Empty name, show error and keep input open
+      nameInputRef.current?.focus()
+      return
+    }
+    // Update station with customer name and start
+    onUpdate({
+      ...station,
+      customerName: trimmedName,
+      isRunning: true,
+    })
+    setIsRunning(true)
+    setShowNameInput(false)
+    setCustomerNameInput('')
+  }
+
+  const handleNameCancel = () => {
+    setShowNameInput(false)
+    setCustomerNameInput('')
   }
 
   const handlePause = () => {
@@ -76,158 +185,335 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
   }
 
   const handleReset = () => {
+    // Show confirmation dialog
+    const confirmed = window.confirm('Are you sure? Do you want to reset time?')
+    if (!confirmed) {
+      return // User cancelled, don't reset
+    }
+    
     setIsRunning(false)
     setElapsedTime(0)
+    setIsDone(false)
     milestone1Hour.current = false
     milestone2Hours.current = false
     milestone3Hours.current = false
-  }
-
-  const handleExtraControllerToggle = () => {
+    // Also reset extra controllers, snacks, and customer name
     onUpdate({
       ...station,
-      hasExtraController: !station.hasExtraController
+      elapsedTime: 0,
+      isRunning: false,
+      isDone: false,
+      extraControllers: 0,
+      snacks: { cokeBottle: 0, cokeCan: 0 },
+      customerName: '',
     })
   }
 
-  const handleSteeringWheelToggle = () => {
+  const handleDone = () => {
+    setIsRunning(false)
+    setIsDone(true)
+  }
+
+  const handleExtraControllerChange = (e) => {
+    const count = parseInt(e.target.value) || 0
     onUpdate({
       ...station,
-      hasSteeringWheel: !station.hasSteeringWheel
+      extraControllers: count
+    })
+  }
+
+  const handleSnackChange = (snackType, value) => {
+    const count = parseInt(value) || 0
+    onUpdate({
+      ...station,
+      snacks: {
+        ...(station.snacks || {}),
+        [snackType]: count
+      }
     })
   }
 
   const gameType = station.gameType || GAME_TYPES.PLAYSTATION
+  const snacks = station.snacks || {}
   const totalCost = calculateCost(
     elapsedTime,
     gameType,
-    station.hasExtraController || false,
-    station.hasSteeringWheel || false
+    station.extraControllers || 0,
+    snacks
   )
   
-  const paidHours = calculatePaidHours(elapsedTime)
-  const bonusTime = getBonusTime(elapsedTime)
-  const currentRate = gameType === GAME_TYPES.PLAYSTATION 
-    ? getPlayStationRate() 
-    : getSystemRate()
+  const paidHours = calculatePaidHours(elapsedTime, gameType)
+  const bonusTime = getBonusTime(elapsedTime, gameType)
+  const currentRate = getRate(gameType)
 
-  const isPlayStation = gameType === GAME_TYPES.PLAYSTATION
-  const borderColor = isRunning 
-    ? 'border-green-400 shadow-green-100' 
-    : isPlayStation 
-      ? 'border-blue-300' 
-      : 'border-green-300'
-  const bgGradient = isPlayStation 
-    ? 'bg-gradient-to-br from-blue-50 to-blue-100' 
-    : 'bg-gradient-to-br from-green-50 to-green-100'
+  const getGameTypeColor = () => {
+    if (gameType === GAME_TYPES.PLAYSTATION) return 'cyan'
+    if (gameType === GAME_TYPES.STEERING_WHEEL) return 'purple'
+    return 'pink'
+  }
+
+  const gameColor = getGameTypeColor()
+  const borderColor = isRunning ? 'green' : isDone ? 'orange' : gameColor
 
   return (
-    <div className={`bg-white rounded-xl shadow-lg p-3 border-2 ${borderColor} transition-all hover:shadow-xl ${isRunning ? 'ring-2 ring-green-300' : ''}`}>
+    <div className={`gaming-card rounded-xl p-4 relative overflow-hidden transition-all duration-300 ${
+      isRunning ? 'border-green-500/50 pulse-glow' : 
+      isDone ? 'border-orange-500/50' : 
+      `border-${gameColor}-500/30`
+    }`}>
+      <div className={`absolute top-0 right-0 w-24 h-24 bg-${gameColor}-500/5 rounded-full blur-2xl`}></div>
       {/* Header */}
-      <div className="flex justify-between items-start mb-2">
+      <div className="flex justify-between items-start mb-3 relative z-10">
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></div>
-            <h3 className="text-sm font-bold text-gray-800 truncate">{station.name}</h3>
+            <div className={`w-2 h-2 rounded-full ${
+              isDone ? 'bg-orange-500 neon-orange' : 
+              isRunning ? 'bg-green-500 neon-green animate-pulse' : 
+              `bg-${gameColor}-400`
+            }`}></div>
+            <h3 className={`text-sm font-bold text-${gameColor}-400 truncate`} style={{ fontFamily: 'Orbitron, sans-serif' }}>{station.name}</h3>
+            {isDone && (
+              <span className="text-[10px] bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded font-semibold uppercase tracking-wider border border-orange-500/30" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Done</span>
+            )}
           </div>
-          <p className="text-xs text-gray-500 mt-0.5">{currentRate}Rs/hr</p>
+          {station.customerName && (
+            <p className="text-xs text-slate-400 mt-1 font-semibold" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+              👤 {station.customerName}
+            </p>
+          )}
+          <p className={`text-xs text-${gameColor}-400 mt-1 font-semibold`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>{currentRate}Rs/hr</p>
         </div>
-        <button
-          onClick={() => onDelete(station.id)}
-          className="text-red-400 hover:text-red-600 text-lg font-bold leading-none"
-          aria-label="Delete station"
-        >
-          ×
-        </button>
+        {station.id > 7 && (
+          <button
+            onClick={() => onDelete(station.id)}
+            className="text-slate-500 hover:text-red-400 text-xl font-bold leading-none transition-all hover:scale-110"
+            aria-label="Delete station"
+          >
+            ×
+          </button>
+        )}
       </div>
 
+      {/* Customer Name Input - Animated */}
+      {showNameInput && (
+        <div className={`mb-3 bg-slate-800/70 border-2 border-${gameColor}-500/50 rounded-lg p-3 animate-in fade-in slide-in-from-top-2 duration-300 relative z-10 shadow-xl`}>
+          <form onSubmit={handleNameSave} className="w-full">
+            <label className={`block text-xs font-bold text-${gameColor}-400 mb-2 uppercase tracking-wider`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+              👤 Customer Name
+            </label>
+            <div className="flex items-center gap-2 w-full">
+              <input
+                ref={nameInputRef}
+                type="text"
+                value={customerNameInput}
+                onChange={(e) => setCustomerNameInput(e.target.value)}
+                placeholder="Enter name..."
+                className={`flex-1 px-3 py-2.5 text-sm border-2 border-${gameColor}-500/40 rounded-lg bg-slate-900/70 text-slate-200 focus:outline-none focus:ring-2 focus:ring-${gameColor}-500/70 focus:border-${gameColor}-500 font-semibold transition-all placeholder:text-slate-500`}
+                style={{ fontFamily: 'Rajdhani, sans-serif' }}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    handleNameCancel()
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleNameSave(e)
+                  }
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!customerNameInput.trim()}
+                className={`px-5 py-2.5 bg-gradient-to-r from-${gameColor}-500 to-${gameColor === 'cyan' ? 'blue' : gameColor === 'purple' ? 'pink' : 'rose'}-500 hover:from-${gameColor}-400 hover:to-${gameColor === 'cyan' ? 'blue' : gameColor === 'purple' ? 'pink' : 'rose'}-400 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 disabled:hover:scale-100 flex items-center justify-center gap-1.5 whitespace-nowrap`}
+                style={{ fontFamily: 'Rajdhani, sans-serif' }}
+              >
+                ✓ OK
+              </button>
+              <button
+                type="button"
+                onClick={handleNameCancel}
+                className="px-3 py-2.5 bg-slate-700/70 hover:bg-slate-700 text-slate-300 rounded-lg font-bold text-sm border-2 border-slate-600 hover:border-slate-500 transition-all duration-200 hover:scale-105 flex items-center justify-center"
+                style={{ fontFamily: 'Rajdhani, sans-serif' }}
+                title="Cancel"
+              >
+                ✕
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* Timer */}
-      <div className={`${bgGradient} rounded-lg p-2 mb-2`}>
+      <div className={`bg-slate-800/50 rounded-lg p-4 mb-3 border border-${gameColor}-500/20 relative z-10 transition-all duration-300 ${showNameInput ? 'opacity-50' : ''}`}>
         <div className="text-center">
-          <div className="text-2xl font-mono font-bold text-gray-800">
+          <div className={`text-3xl font-bold text-${gameColor}-400 tracking-tight neon-${gameColor}`} style={{ 
+            fontFamily: 'Orbitron, sans-serif'
+          }}>
             {formatTime(elapsedTime || 0)}
           </div>
           {isRunning && (
-            <div className="text-xs text-green-600 font-semibold mt-1">● Running</div>
+            <div className="text-xs text-green-400 font-semibold mt-2 neon-green" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+              ● LIVE
+            </div>
           )}
         </div>
       </div>
 
       {/* Controls */}
-      <div className="flex gap-1.5 mb-2">
-        <button
-          onClick={handleStart}
-          disabled={isRunning}
-          className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-            isRunning 
-              ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
-              : 'bg-green-500 hover:bg-green-600 text-white shadow-md'
-          }`}
-        >
-          ▶ Start
-        </button>
-        <button
-          onClick={handlePause}
-          disabled={!isRunning}
-          className={`px-2 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-            !isRunning 
-              ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
-              : 'bg-yellow-500 hover:bg-yellow-600 text-white shadow-md'
-          }`}
-        >
-          ⏸
-        </button>
-        <button
-          onClick={handleReset}
-          className="px-2 py-1.5 text-xs font-semibold bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow-md transition-all"
-        >
-          ↻
-        </button>
+      <div className={`flex gap-1.5 mb-2 transition-all duration-300 ${showNameInput ? 'opacity-50 pointer-events-none' : ''}`}>
+        {!isDone ? (
+          <>
+            <button
+              onClick={handleStart}
+              disabled={isRunning || showNameInput}
+              className={`flex-1 px-3 py-2 text-xs font-bold rounded-lg transition-all duration-200 ${
+                isRunning || showNameInput
+                  ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-600' 
+                  : `bg-gradient-to-r from-${gameColor}-500 to-${gameColor === 'cyan' ? 'blue' : gameColor === 'purple' ? 'pink' : 'rose'}-500 hover:from-${gameColor}-400 hover:to-${gameColor === 'cyan' ? 'blue' : gameColor === 'purple' ? 'pink' : 'rose'}-400 text-white shadow-lg`
+              }`}
+              style={{ fontFamily: 'Rajdhani, sans-serif' }}
+            >
+              ▶ Start
+            </button>
+            <button
+              onClick={handlePause}
+              disabled={!isRunning}
+              className={`px-3 py-2 text-xs font-bold rounded-lg transition-all duration-200 ${
+                !isRunning 
+                  ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-600' 
+                  : 'bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white shadow-lg'
+              }`}
+              style={{ fontFamily: 'Rajdhani, sans-serif' }}
+            >
+              ⏸ Pause
+            </button>
+            <button
+              onClick={handleDone}
+              disabled={elapsedTime === 0}
+              className={`px-3 py-2 text-xs font-bold rounded-lg transition-all duration-200 ${
+                elapsedTime === 0
+                  ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-600'
+                  : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white shadow-lg neon-orange'
+              }`}
+              style={{ fontFamily: 'Rajdhani, sans-serif' }}
+            >
+              ✓ Done
+            </button>
+            <button
+              onClick={handleReset}
+              className="px-3 py-2 text-xs font-bold bg-slate-700/50 hover:bg-slate-600 text-slate-300 rounded-lg transition-all duration-200 border border-slate-600 hover:border-slate-500"
+              style={{ fontFamily: 'Rajdhani, sans-serif' }}
+            >
+              ↻ Reset
+            </button>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <span className="text-xs font-semibold text-slate-400" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Completed</span>
+          </div>
+        )}
+        {isDone && (
+          <button
+            onClick={handleReset}
+            className="px-3 py-2 text-xs font-bold bg-slate-700/50 hover:bg-slate-600 text-slate-300 rounded-lg transition-all duration-200 border border-slate-600 hover:border-slate-500"
+            style={{ fontFamily: 'Rajdhani, sans-serif' }}
+          >
+            ↻ Reset
+          </button>
+        )}
       </div>
 
       {/* Extras & Cost */}
-      <div className="space-y-1.5 pt-2 border-t border-gray-200">
+      <div className="space-y-2 pt-3 border-t border-slate-700/50 relative z-10">
         {gameType === GAME_TYPES.PLAYSTATION && (
-          <label className="flex items-center gap-1.5 text-xs cursor-pointer hover:bg-blue-50 p-1 rounded">
-            <input
-              type="checkbox"
-              checked={station.hasExtraController || false}
-              onChange={handleExtraControllerToggle}
-              className="w-3 h-3 text-blue-600 rounded focus:ring-blue-500"
-            />
-            <span className="text-gray-700">Extra Ctrl (+50Rs)</span>
-          </label>
+          <div className="flex items-center gap-2 text-xs">
+            <label htmlFor={`extra-ctrl-${station.id}`} className={`text-slate-400 whitespace-nowrap font-semibold text-[10px]`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+              Extra Ctrl:
+            </label>
+            <select
+              id={`extra-ctrl-${station.id}`}
+              value={station.extraControllers || 0}
+              onChange={handleExtraControllerChange}
+              className={`flex-1 px-2 py-1 text-xs border border-${gameColor}-500/30 rounded-lg bg-slate-900/50 text-slate-200 focus:outline-none focus:ring-2 focus:ring-${gameColor}-500/50 focus:border-${gameColor}-500 font-semibold`}
+              style={{ fontFamily: 'Rajdhani, sans-serif' }}
+              disabled={isDone}
+            >
+              <option value="0" className="bg-slate-800">0 (+0Rs)</option>
+              <option value="1" className="bg-slate-800">1 (+50Rs)</option>
+              <option value="2" className="bg-slate-800">2 (+100Rs)</option>
+              <option value="3" className="bg-slate-800">3 (+150Rs)</option>
+            </select>
+          </div>
         )}
-        {gameType === GAME_TYPES.SYSTEM && (
-          <label className="flex items-center gap-1.5 text-xs cursor-pointer hover:bg-green-50 p-1 rounded">
-            <input
-              type="checkbox"
-              checked={station.hasSteeringWheel || false}
-              onChange={handleSteeringWheelToggle}
-              className="w-3 h-3 text-green-600 rounded focus:ring-green-500"
-            />
-            <span className="text-gray-700">Wheel (+150Rs)</span>
-          </label>
-        )}
+        
+        {/* Snacks Selection */}
+        <div className="space-y-1.5">
+          <div className={`text-${gameColor}-400 text-[10px] font-semibold mb-0.5`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>Snacks:</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <div className="flex items-center gap-1">
+              <label htmlFor={`coke-bottle-${station.id}`} className="text-slate-400 text-[10px] font-semibold whitespace-nowrap" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+                Bottle:
+              </label>
+              <select
+                id={`coke-bottle-${station.id}`}
+                value={snacks.cokeBottle || 0}
+                onChange={(e) => handleSnackChange('cokeBottle', e.target.value)}
+                className={`flex-1 px-1.5 py-1 text-[10px] border border-${gameColor}-500/30 rounded-lg bg-slate-900/50 text-slate-200 focus:outline-none focus:ring-1 focus:ring-${gameColor}-500/50 focus:border-${gameColor}-500 font-semibold`}
+                style={{ fontFamily: 'Rajdhani, sans-serif' }}
+                disabled={isDone}
+              >
+                <option value="0" className="bg-slate-800">0</option>
+                <option value="1" className="bg-slate-800">1</option>
+                <option value="2" className="bg-slate-800">2</option>
+                <option value="3" className="bg-slate-800">3</option>
+                <option value="4" className="bg-slate-800">4</option>
+                <option value="5" className="bg-slate-800">5</option>
+              </select>
+              <span className={`text-[10px] text-${gameColor}-400 font-semibold`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>({getCokeBottleRate()}Rs)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <label htmlFor={`coke-can-${station.id}`} className="text-slate-400 text-[10px] font-semibold whitespace-nowrap" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+                Can:
+              </label>
+              <select
+                id={`coke-can-${station.id}`}
+                value={snacks.cokeCan || 0}
+                onChange={(e) => handleSnackChange('cokeCan', e.target.value)}
+                className={`flex-1 px-1.5 py-1 text-[10px] border border-${gameColor}-500/30 rounded-lg bg-slate-900/50 text-slate-200 focus:outline-none focus:ring-1 focus:ring-${gameColor}-500/50 focus:border-${gameColor}-500 font-semibold`}
+                style={{ fontFamily: 'Rajdhani, sans-serif' }}
+                disabled={isDone}
+              >
+                <option value="0" className="bg-slate-800">0</option>
+                <option value="1" className="bg-slate-800">1</option>
+                <option value="2" className="bg-slate-800">2</option>
+                <option value="3" className="bg-slate-800">3</option>
+                <option value="4" className="bg-slate-800">4</option>
+                <option value="5" className="bg-slate-800">5</option>
+              </select>
+              <span className={`text-[10px] text-${gameColor}-400 font-semibold`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>({getCokeCanRate()}Rs)</span>
+            </div>
+          </div>
+        </div>
         
         {elapsedTime > 0 && (
           <div className="text-xs space-y-0.5 pt-1">
-            <div className="flex justify-between text-gray-600">
-              <span>Paid:</span>
-              <span className="font-semibold">{formatTime(paidHours * 3600)}</span>
+            <div className="flex justify-between text-slate-400">
+              <span className="font-semibold text-[10px]" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Paid:</span>
+              <span className={`font-bold text-${gameColor}-400`} style={{ fontFamily: 'Orbitron, sans-serif' }}>{formatTime(paidHours * 3600)}</span>
             </div>
             {bonusTime > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span>Bonus:</span>
-                <span className="font-semibold">+{formatTime(bonusTime)}</span>
+              <div className="flex justify-between text-green-400">
+                <span className="font-semibold text-[10px]" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Bonus:</span>
+                <span className="font-bold neon-green" style={{ fontFamily: 'Orbitron, sans-serif' }}>+{formatTime(bonusTime)}</span>
               </div>
             )}
           </div>
         )}
         
-        <div className="flex justify-between items-center pt-1 border-t border-gray-100">
-          <span className="text-xs text-gray-600">Cost:</span>
-          <span className="text-sm font-bold text-gray-800">{totalCost}Rs</span>
+        <div className="flex justify-between items-center pt-2 border-t border-slate-700/50">
+          <span className={`text-xs text-${gameColor}-400 font-semibold`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>Cost:</span>
+          <span className={`text-base font-bold text-${gameColor}-400 neon-${gameColor}`} style={{ 
+            fontFamily: 'Orbitron, sans-serif'
+          }}>{totalCost}Rs</span>
         </div>
       </div>
     </div>

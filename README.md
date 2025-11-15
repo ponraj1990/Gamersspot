@@ -1,6 +1,6 @@
 # PS Game Timer
 
-A React-based application for managing PS4/PS5 gaming station timers with billing and invoice generation.
+A React-based application for managing PS5 gaming station timers with billing and invoice generation.
 
 ## Features
 
@@ -69,7 +69,7 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
 
 ## Usage
 
-1. Add gaming stations (PS4/PS5)
+1. Add gaming stations (PS5, Steering Wheel, System)
 2. Set timer duration in minutes
 3. Start/pause/reset timers
 4. Generate invoices for completed sessions
