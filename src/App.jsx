@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import StationCard from './components/StationCard'
 import BillingPanel from './components/BillingPanel'
 import InvoiceViewer from './components/InvoiceViewer'
@@ -113,12 +113,77 @@ function App() {
     fetchStations()
   }, [])
 
+  // Throttle database saves to once per minute to reduce connection timeouts
+  const lastSaveTimeRef = useRef(0)
+  const saveTimeoutRef = useRef(null)
+  const pendingStationsRef = useRef(null)
+  const prevStationsRef = useRef([])
+  
   useEffect(() => {
     if (stations.length > 0) {
-      // Save stations to database (async, non-blocking)
-      saveStations(stations).catch(error => {
-        console.error('Error saving stations:', error)
+      const now = Date.now()
+      const timeSinceLastSave = now - lastSaveTimeRef.current
+      const SAVE_INTERVAL = 60000 // 1 minute in milliseconds
+      
+      // Check if this is a critical update (start/stop/done/customer name) that needs immediate save
+      const prevStations = prevStationsRef.current
+      const hasCriticalChange = stations.some((station, index) => {
+        const prevStation = prevStations[index]
+        if (!prevStation) return true // New station, save immediately
+        
+        // Critical changes that need immediate save:
+        // - isRunning changed (start/stop)
+        // - isDone changed
+        // - customerName changed
+        // - startTime changed (timer started)
+        // - endTime changed (timer stopped)
+        return (
+          prevStation.isRunning !== station.isRunning ||
+          prevStation.isDone !== station.isDone ||
+          (prevStation.customerName || '') !== (station.customerName || '') ||
+          prevStation.startTime !== station.startTime ||
+          prevStation.endTime !== station.endTime ||
+          prevStation.extraControllers !== station.extraControllers ||
+          JSON.stringify(prevStation.snacks || {}) !== JSON.stringify(station.snacks || {})
+        )
       })
+      
+      // Store the latest stations state
+      pendingStationsRef.current = stations
+      
+      // Clear any pending save timeout
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+      
+      // If critical change or enough time has passed, save immediately
+      if (hasCriticalChange || timeSinceLastSave >= SAVE_INTERVAL) {
+        lastSaveTimeRef.current = now
+        saveStations(stations).catch(error => {
+          console.error('Error saving stations:', error)
+        })
+        prevStationsRef.current = stations.map(s => ({ ...s })) // Deep copy for comparison
+      } else {
+        // Schedule a save after the remaining time (for elapsed time updates)
+        const remainingTime = SAVE_INTERVAL - timeSinceLastSave
+        saveTimeoutRef.current = setTimeout(() => {
+          if (pendingStationsRef.current) {
+            lastSaveTimeRef.current = Date.now()
+            saveStations(pendingStationsRef.current).catch(error => {
+              console.error('Error saving stations:', error)
+            })
+            prevStationsRef.current = pendingStationsRef.current.map(s => ({ ...s }))
+            pendingStationsRef.current = null
+          }
+        }, remainingTime)
+      }
+    }
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
     }
   }, [stations])
 
