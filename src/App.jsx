@@ -201,8 +201,16 @@ function App() {
   const saveTimeoutRef = useRef(null)
   const pendingStationsRef = useRef(null)
   const prevStationsRef = useRef([])
+  const isPaidResetRef = useRef(false) // Flag to prevent useEffect from overwriting paid reset
   
   useEffect(() => {
+    // Skip if this is a paid reset (we handle saving manually)
+    if (isPaidResetRef.current) {
+      console.log('[useEffect] Skipping auto-save - paid reset in progress')
+      // Don't reset flag here - let handleInvoicePaid do it after save completes
+      return
+    }
+    
     if (stations.length > 0) {
       const now = Date.now()
       const timeSinceLastSave = now - lastSaveTimeRef.current
@@ -281,9 +289,19 @@ function App() {
     // This clears completed sessions and resets stations completely
     console.log('Paid button clicked - resetting stations:', invoiceStations.map(s => ({ id: s.id, name: s.name })))
     
+    // Set flag to prevent useEffect from overwriting this reset
+    isPaidResetRef.current = true
+    
+    // Clear any pending save timeout first to prevent conflicts
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+      saveTimeoutRef.current = null
+    }
+    
     // Use functional setState to ensure we get the latest state
     let updatedStations = null
     
+    // Reset stations in state
     setStations((prev) => {
       updatedStations = prev.map((station) => {
         const invoiceStation = invoiceStations.find((is) => is.id === station.id)
@@ -332,9 +350,6 @@ function App() {
         return station
       })
       
-      // Update prevStationsRef to mark this as a critical change
-      prevStationsRef.current = updatedStations.map(s => ({ ...s }))
-      
       // Log how many completed sessions were cleared
       const clearedCount = invoiceStations.filter(s => s.isDone || s.elapsedTime > 0).length
       if (clearedCount > 0) {
@@ -344,13 +359,15 @@ function App() {
       return updatedStations
     })
     
-    // Save immediately to database (bypass throttling)
-    // Clear any pending save timeout first
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current)
-      saveTimeoutRef.current = null
+    // Wait for state to update
+    await new Promise(resolve => setTimeout(resolve, 10))
+    
+    // Update prevStationsRef AFTER state update to prevent useEffect from overwriting
+    if (updatedStations) {
+      prevStationsRef.current = updatedStations.map(s => ({ ...s }))
     }
     
+    // Save immediately to database (bypass throttling)
     try {
       // Save the reset stations immediately
       if (updatedStations) {
@@ -370,13 +387,72 @@ function App() {
         await saveStations(updatedStations)
         console.log('✅ Stations reset and saved to database after payment - Completed Sessions cleared')
         
-        // Reset the save timer to prevent immediate re-save
+        // Verify completed sessions count after reset
+        const completedCount = updatedStations.filter(s => s.isDone === true && (s.elapsedTime || 0) > 0).length
+        console.log(`Completed Sessions count after reset: ${completedCount} (should be 0)`)
+        
+        // Verify the reset stations
+        const resetStationIds = invoiceStations.map(s => s.id)
+        const resetStationsStatus = updatedStations
+          .filter(s => resetStationIds.includes(s.id))
+          .map(s => ({
+            id: s.id,
+            name: s.name,
+            isDone: s.isDone,
+            elapsedTime: s.elapsedTime,
+            isRunning: s.isRunning
+          }))
+        console.log('Reset stations status:', resetStationsStatus)
+        
+        // Reload stations from database to ensure UI is in sync
+        // Keep flag set during reload to prevent useEffect from interfering
+        try {
+          const reloadedStations = await loadStations()
+          if (reloadedStations && reloadedStations.length > 0) {
+            // Update state with reloaded stations to ensure UI reflects database
+            setStations(reloadedStations)
+            prevStationsRef.current = reloadedStations.map(s => ({ ...s }))
+            
+            const reloadedCompletedCount = reloadedStations.filter(s => s.isDone === true && (s.elapsedTime || 0) > 0).length
+            console.log(`Reloaded stations - Completed Sessions count: ${reloadedCompletedCount} (should be 0)`)
+            
+            // Verify each reset station
+            const resetStationIds = invoiceStations.map(s => s.id)
+            reloadedStations
+              .filter(s => resetStationIds.includes(s.id))
+              .forEach(s => {
+                if (s.isDone || s.elapsedTime > 0 || s.isRunning) {
+                  console.error(`❌ Station ${s.name} (ID: ${s.id}) was NOT properly reset:`, {
+                    isDone: s.isDone,
+                    elapsedTime: s.elapsedTime,
+                    isRunning: s.isRunning,
+                    customerName: s.customerName,
+                    startTime: s.startTime
+                  })
+                } else {
+                  console.log(`✅ Station ${s.name} (ID: ${s.id}) properly reset`)
+                }
+              })
+          }
+        } catch (reloadError) {
+          console.error('Error reloading stations after reset:', reloadError)
+        }
+        
+        // Reset the save timer to prevent immediate re-save from useEffect
         lastSaveTimeRef.current = Date.now()
+        
+        // Clear the flag after a delay to allow state to settle and prevent useEffect from running
+        setTimeout(() => {
+          isPaidResetRef.current = false
+          console.log('Paid reset flag cleared - useEffect can now run normally')
+        }, 300)
       } else {
         console.error('❌ No updated stations to save')
+        isPaidResetRef.current = false
       }
     } catch (error) {
       console.error('❌ Error saving reset stations to database:', error)
+      isPaidResetRef.current = false
       // Still update local state even if save fails
     }
   }
