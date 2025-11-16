@@ -92,7 +92,7 @@ export async function getDbClient() {
           },
           max: 1, // Limit connections for serverless
           idleTimeoutMillis: 30000,
-          connectionTimeoutMillis: 10000
+          connectionTimeoutMillis: 30000 // Increased to 30 seconds for serverless cold starts and network delays
         });
         
         // Handle pool errors
@@ -108,7 +108,9 @@ export async function getDbClient() {
     // Get a client from the pool
     let client;
     try {
+      console.log('Attempting to get client from pool...');
       client = await dbPool.connect();
+      console.log('Successfully connected to database');
     } catch (connectError) {
       console.error('Error connecting to database:', connectError);
       console.error('Connection error details:', {
@@ -119,7 +121,7 @@ export async function getDbClient() {
         message: connectError.message
       });
       
-      // Provide helpful error message
+      // Provide helpful error message based on error type
       if (connectError.code === 'ENOTFOUND') {
         throw new Error(
           `Cannot resolve database hostname. This usually means:\n` +
@@ -129,6 +131,23 @@ export async function getDbClient() {
           `Original error: ${connectError.message}`
         );
       }
+      
+      // Handle timeout errors
+      if (connectError.message && connectError.message.includes('timeout')) {
+        throw new Error(
+          `Database connection timeout. This usually means:\n` +
+          `1. Your Supabase project might be paused - check Supabase Dashboard → Settings → General and restore if needed\n` +
+          `2. Network connectivity issues - the pooler might be temporarily unavailable\n` +
+          `3. Too many connections - try again in a few moments\n` +
+          `4. Cold start delay - first connection after inactivity may take longer\n` +
+          `\nTroubleshooting steps:\n` +
+          `- Check Supabase Dashboard to ensure project is active\n` +
+          `- Verify your connection string uses the Transaction Pooler (port 6543)\n` +
+          `- Wait a few seconds and try again\n` +
+          `Original error: ${connectError.message}`
+        );
+      }
+      
       throw connectError;
     }
     
