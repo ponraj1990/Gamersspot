@@ -72,10 +72,23 @@ export async function getDbClient() {
     // Create pool if it doesn't exist
     if (!dbPool) {
       try {
+        // Parse connection string to modify SSL settings
+        // Remove sslmode from connection string to avoid conflicts with Pool SSL config
+        const url = new URL(connectionString);
+        const originalSslMode = url.searchParams.get('sslmode');
+        url.searchParams.delete('sslmode');
+        const modifiedConnectionString = url.toString();
+        
+        console.log('Creating pool with SSL configuration');
+        console.log('Original sslmode:', originalSslMode || 'not set');
+        console.log('Using Pool SSL config: rejectUnauthorized=false');
+        
         dbPool = new Pool({
-          connectionString: connectionString,
+          connectionString: modifiedConnectionString,
+          // SSL configuration - explicitly set to allow self-signed certificates
+          // This is required for Supabase
           ssl: {
-            rejectUnauthorized: false // Required for Supabase
+            rejectUnauthorized: false // Required for Supabase self-signed certificates
           },
           max: 1, // Limit connections for serverless
           idleTimeoutMillis: 30000,
