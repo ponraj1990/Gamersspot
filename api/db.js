@@ -69,9 +69,14 @@ export async function getDbClient() {
     // Use connection pool for serverless (better for Vercel)
     const { Pool } = await import('pg');
     
-    // Create pool if it doesn't exist
-    if (!dbPool) {
+    // Create pool if it doesn't exist or if it's been closed
+    if (!dbPool || dbPool.ended) {
       try {
+        // If pool exists but is ended, log it
+        if (dbPool && dbPool.ended) {
+          console.log('Pool was ended, recreating...');
+        }
+        
         // Parse connection string to modify SSL settings
         // Remove sslmode from connection string to avoid conflicts with Pool SSL config
         const url = new URL(connectionString);
@@ -95,60 +100,91 @@ export async function getDbClient() {
           connectionTimeoutMillis: 30000 // Increased to 30 seconds for serverless cold starts and network delays
         });
         
-        // Handle pool errors
+        // Handle pool errors - if pool has an error, reset it
         dbPool.on('error', (err) => {
           console.error('Unexpected error on idle client', err);
+          // Don't destroy the pool immediately, let retry logic handle it
         });
       } catch (poolError) {
         console.error('Error creating connection pool:', poolError);
+        dbPool = null; // Reset pool on error
         throw new Error(`Failed to create database connection pool: ${poolError.message}. Please verify your POSTGRES_URL environment variable in Vercel.`);
       }
     }
     
-    // Get a client from the pool
+    // Get a client from the pool with retry logic
     let client;
-    try {
-      console.log('Attempting to get client from pool...');
-      client = await dbPool.connect();
-      console.log('Successfully connected to database');
-    } catch (connectError) {
-      console.error('Error connecting to database:', connectError);
-      console.error('Connection error details:', {
-        code: connectError.code,
-        errno: connectError.errno,
-        syscall: connectError.syscall,
-        hostname: connectError.hostname || 'unknown',
-        message: connectError.message
-      });
-      
-      // Provide helpful error message based on error type
-      if (connectError.code === 'ENOTFOUND') {
-        throw new Error(
-          `Cannot resolve database hostname. This usually means:\n` +
-          `1. Your Supabase project might be paused - check Supabase Dashboard and restore if needed\n` +
-          `2. The connection string hostname is incorrect - verify in Supabase Dashboard → Settings → Database\n` +
-          `3. You should use the pooled connection string (pooler.supabase.com) instead of direct connection\n` +
-          `Original error: ${connectError.message}`
-        );
+    const maxRetries = 3;
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Attempting to get client from pool (attempt ${attempt}/${maxRetries})...`);
+        
+        // Add a small delay between retries (exponential backoff)
+        if (attempt > 1) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 2), 5000); // 1s, 2s, 4s max
+          console.log(`Waiting ${delay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        
+        client = await dbPool.connect();
+        console.log('Successfully connected to database');
+        lastError = null;
+        break; // Success, exit retry loop
+      } catch (connectError) {
+        lastError = connectError;
+        console.error(`Connection attempt ${attempt} failed:`, connectError.message);
+        
+        // Don't retry on certain errors
+        if (connectError.code === 'ENOTFOUND') {
+          throw new Error(
+            `Cannot resolve database hostname. This usually means:\n` +
+            `1. Your Supabase project might be paused - check Supabase Dashboard and restore if needed\n` +
+            `2. The connection string hostname is incorrect - verify in Supabase Dashboard → Settings → Database\n` +
+            `3. You should use the pooled connection string (pooler.supabase.com) instead of direct connection\n` +
+            `Original error: ${connectError.message}`
+          );
+        }
+        
+        // If this is the last attempt, throw the error
+        if (attempt === maxRetries) {
+          console.error('All connection attempts failed');
+          console.error('Connection error details:', {
+            code: connectError.code,
+            errno: connectError.errno,
+            syscall: connectError.syscall,
+            hostname: connectError.hostname || 'unknown',
+            message: connectError.message
+          });
+          
+          // Handle timeout errors with helpful message
+          if (connectError.message && connectError.message.includes('timeout')) {
+            throw new Error(
+              `Database connection timeout after ${maxRetries} attempts. This usually means:\n` +
+              `1. Your Supabase project might be paused - check Supabase Dashboard → Settings → General and restore if needed\n` +
+              `2. Network connectivity issues - the pooler might be temporarily unavailable\n` +
+              `3. Too many connections - try again in a few moments\n` +
+              `4. Cold start delay - first connection after inactivity may take longer\n` +
+              `\nTroubleshooting steps:\n` +
+              `- Check Supabase Dashboard to ensure project is active\n` +
+              `- Verify your connection string uses the Transaction Pooler (port 6543)\n` +
+              `- Wait a few seconds and try again\n` +
+              `Original error: ${connectError.message}`
+            );
+          }
+          
+          throw connectError;
+        }
+        
+        // Continue to next retry attempt
+        console.log(`Will retry connection (${maxRetries - attempt} attempts remaining)`);
       }
-      
-      // Handle timeout errors
-      if (connectError.message && connectError.message.includes('timeout')) {
-        throw new Error(
-          `Database connection timeout. This usually means:\n` +
-          `1. Your Supabase project might be paused - check Supabase Dashboard → Settings → General and restore if needed\n` +
-          `2. Network connectivity issues - the pooler might be temporarily unavailable\n` +
-          `3. Too many connections - try again in a few moments\n` +
-          `4. Cold start delay - first connection after inactivity may take longer\n` +
-          `\nTroubleshooting steps:\n` +
-          `- Check Supabase Dashboard to ensure project is active\n` +
-          `- Verify your connection string uses the Transaction Pooler (port 6543)\n` +
-          `- Wait a few seconds and try again\n` +
-          `Original error: ${connectError.message}`
-        );
-      }
-      
-      throw connectError;
+    }
+    
+    // If we get here without a client, something went wrong
+    if (!client) {
+      throw new Error('Failed to establish database connection after all retry attempts');
     }
     
     return {
