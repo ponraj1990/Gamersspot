@@ -14,16 +14,50 @@ export async function getDbClient() {
   if (isVercel) {
     // Use Supabase connection string for production
     // POSTGRES_URL should be set in Vercel environment variables
-    const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+    let connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
     
     if (!connectionString) {
       console.error('POSTGRES_URL or DATABASE_URL environment variable is required for Vercel deployment');
       throw new Error('POSTGRES_URL or DATABASE_URL environment variable is required for Vercel deployment');
     }
     
-    // Log connection string (without password) for debugging
-    const connectionStringForLog = connectionString.replace(/:[^:@]+@/, ':****@');
-    console.log('Attempting to connect with:', connectionStringForLog);
+    // Sanitize connection string: remove whitespace, newlines, and trim
+    connectionString = connectionString.trim().replace(/\s+/g, '').replace(/\n/g, '').replace(/\r/g, '');
+    
+    // Validate connection string format
+    if (!connectionString.startsWith('postgresql://') && !connectionString.startsWith('postgres://')) {
+      console.error('Invalid connection string format. Must start with postgresql:// or postgres://');
+      throw new Error('Invalid connection string format. Must start with postgresql:// or postgres://');
+    }
+    
+    // Extract and validate hostname
+    try {
+      const url = new URL(connectionString);
+      const hostname = url.hostname;
+      
+      // Check if hostname is complete (should contain pooler.supabase.com or db.xxx.supabase.co)
+      if (!hostname || hostname.length < 10) {
+        console.error('Connection string hostname appears to be truncated:', hostname);
+        throw new Error(`Connection string hostname is incomplete: "${hostname}". Please check your POSTGRES_URL environment variable in Vercel - it may have been cut off or contain hidden characters.`);
+      }
+      
+      if (!hostname.includes('supabase.com') && !hostname.includes('supabase.co')) {
+        console.error('Connection string hostname does not appear to be a Supabase hostname:', hostname);
+        throw new Error(`Connection string hostname "${hostname}" does not appear to be a valid Supabase hostname. Please verify your POSTGRES_URL in Vercel.`);
+      }
+      
+      // Log connection string (without password) for debugging
+      const connectionStringForLog = connectionString.replace(/:[^:@]+@/, ':****@');
+      console.log('Attempting to connect with:', connectionStringForLog);
+      console.log('Hostname:', hostname);
+      console.log('Port:', url.port || '5432');
+    } catch (urlError) {
+      if (urlError.message.includes('incomplete') || urlError.message.includes('truncated')) {
+        throw urlError;
+      }
+      console.error('Error parsing connection string URL:', urlError);
+      throw new Error(`Invalid connection string format: ${urlError.message}. Please verify your POSTGRES_URL environment variable in Vercel.`);
+    }
     
     // Check if using pooled connection (recommended for serverless)
     const isPooledConnection = connectionString.includes('pooler.supabase.com') || connectionString.includes(':6543');

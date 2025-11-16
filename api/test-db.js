@@ -19,10 +19,35 @@ export default async function handler(req, res) {
       const hasDatabaseUrl = !!process.env.DATABASE_URL;
       
       // Mask connection string for logging
-      const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL || 'NOT SET';
+      let connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL || 'NOT SET';
       const maskedConnection = connectionString !== 'NOT SET' 
         ? connectionString.replace(/:[^:@]+@/, ':****@')
         : 'NOT SET';
+
+      // Parse connection string to check for truncation
+      let connectionInfo = {
+        length: connectionString !== 'NOT SET' ? connectionString.length : 0,
+        hostname: 'unknown',
+        port: 'unknown',
+        isTruncated: false,
+        isValidFormat: false
+      };
+
+      if (connectionString !== 'NOT SET') {
+        try {
+          const url = new URL(connectionString);
+          connectionInfo.hostname = url.hostname;
+          connectionInfo.port = url.port || '5432';
+          connectionInfo.isValidFormat = true;
+          
+          // Check if hostname looks truncated
+          if (connectionInfo.hostname.length < 10 || !connectionInfo.hostname.includes('supabase')) {
+            connectionInfo.isTruncated = true;
+          }
+        } catch (e) {
+          connectionInfo.isValidFormat = false;
+        }
+      }
 
       // Try to connect
       db = await getDbClient();
@@ -41,8 +66,12 @@ export default async function handler(req, res) {
           hasPostgresUrl,
           hasDatabaseUrl,
           connectionString: maskedConnection,
-          hostname: maskedConnection.includes('pooler.supabase.com') ? 'pooler (correct)' : 
-                   maskedConnection.includes('db.') ? 'direct (wrong - use pooler)' : 'unknown'
+          connectionInfo: {
+            ...connectionInfo,
+            hostname: connectionInfo.hostname.replace(/:[^:@]+@/, ':****@') // Mask password if in hostname
+          },
+          hostnameType: maskedConnection.includes('pooler.supabase.com') ? 'pooler (correct)' : 
+                       maskedConnection.includes('db.') ? 'direct (wrong - use pooler)' : 'unknown'
         },
         database: {
           currentTime: rows[0].current_time,
@@ -54,6 +83,32 @@ export default async function handler(req, res) {
         await closeDbClient(db);
       }
       
+      // Parse connection string for error details
+      const errorConnectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL || 'NOT SET';
+      let errorConnectionInfo = {
+        length: errorConnectionString !== 'NOT SET' ? errorConnectionString.length : 0,
+        hostname: 'unknown',
+        port: 'unknown',
+        isTruncated: false,
+        isValidFormat: false
+      };
+
+      if (errorConnectionString !== 'NOT SET') {
+        try {
+          const url = new URL(errorConnectionString);
+          errorConnectionInfo.hostname = url.hostname;
+          errorConnectionInfo.port = url.port || '5432';
+          errorConnectionInfo.isValidFormat = true;
+          
+          // Check if hostname looks truncated
+          if (errorConnectionInfo.hostname.length < 10 || !errorConnectionInfo.hostname.includes('supabase')) {
+            errorConnectionInfo.isTruncated = true;
+          }
+        } catch (e) {
+          errorConnectionInfo.isValidFormat = false;
+        }
+      }
+
       return res.status(500).json({
         success: false,
         error: error.message,
@@ -61,14 +116,21 @@ export default async function handler(req, res) {
           code: error.code,
           errno: error.errno,
           syscall: error.syscall,
-          hostname: error.hostname
+          hostname: error.hostname || errorConnectionInfo.hostname
         },
         environment: {
           isVercel: process.env.VERCEL === '1' || process.env.VERCEL === 'true',
           hasPostgresUrl: !!process.env.POSTGRES_URL,
           hasDatabaseUrl: !!process.env.DATABASE_URL,
-          connectionString: (process.env.POSTGRES_URL || process.env.DATABASE_URL || 'NOT SET')
-            .replace(/:[^:@]+@/, ':****@')
+          connectionString: errorConnectionString !== 'NOT SET' 
+            ? errorConnectionString.replace(/:[^:@]+@/, ':****@')
+            : 'NOT SET',
+          connectionInfo: errorConnectionInfo,
+          recommendation: errorConnectionInfo.isTruncated 
+            ? 'Connection string appears to be truncated. Please update POSTGRES_URL in Vercel with the complete connection string (see FIX_CONNECTION_STRING.md)'
+            : errorConnectionInfo.hostname.includes('db.') && !errorConnectionInfo.hostname.includes('pooler')
+              ? 'Using direct connection. Switch to Transaction Pooler connection (pooler.supabase.com:6543)'
+              : 'Check connection string format and ensure Supabase project is not paused'
         }
       });
     }
