@@ -27,13 +27,6 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
   const milestone5MinWarning4H = useRef(false) // 5 minutes before 4 hours (235 minutes)
   const milestone4Hours = useRef(false)
   
-  // Test mode: Use seconds instead of minutes for quick testing
-  // Enable by running in browser console: localStorage.setItem('testMode', 'true')
-  // Disable: localStorage.removeItem('testMode')
-  // Or use: window.testStationTime(stationId, seconds) to manually set elapsed time
-  const isTestMode = typeof window !== 'undefined' && localStorage.getItem('testMode') === 'true'
-  const TIME_MULTIPLIER = isTestMode ? 1 : 60 // In test mode: 1 second = 1 minute, otherwise normal
-  
   // Expose test function to window for manual testing
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -41,15 +34,15 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
       const testKey = `testStationTime_${station.id}`
       window[testKey] = (testSeconds) => {
         console.log(`[TEST] Setting ${station.name} elapsed time to ${testSeconds} seconds`)
-        const currentTestMode = localStorage.getItem('testMode') === 'true'
-        const warning1H = currentTestMode ? 55 : 3300
-        const hour1 = currentTestMode ? 60 : 3600
-        const warning2H = currentTestMode ? 115 : 6900
-        const hour2 = currentTestMode ? 120 : 7200
-        const warning3H = currentTestMode ? 175 : 10500
-        const hour3 = currentTestMode ? 180 : 10800
-        const warning4H = currentTestMode ? 235 : 14100
-        const hour4 = currentTestMode ? 240 : 14400
+        // Define thresholds (in seconds)
+        const warning1H = 3300   // 55 minutes
+        const hour1 = 3600       // 1 hour
+        const warning2H = 6900   // 115 minutes (5 min before 2h)
+        const hour2 = 7200       // 2 hours
+        const warning3H = 10500  // 175 minutes (5 min before 3h)
+        const hour3 = 10800      // 3 hours
+        const warning4H = 14100  // 235 minutes (5 min before 4h)
+        const hour4 = 14400      // 4 hours
         
         // Reset all milestone flags to allow re-testing
         milestone5MinWarning1H.current = false
@@ -156,15 +149,15 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
           const dayType = getDayType()
           const isWeekendNoBonus = (gameType === GAME_TYPES.PLAYSTATION || gameType === GAME_TYPES.STEERING_WHEEL) && dayType === 'weekend'
           
-          // Define thresholds (in test mode: seconds = minutes, otherwise normal)
-          const warning1H = isTestMode ? 55 : 3300  // 55 minutes
-          const hour1 = isTestMode ? 60 : 3600      // 1 hour
-          const warning2H = isTestMode ? 115 : 6900  // 115 minutes (5 min before 2h)
-          const hour2 = isTestMode ? 120 : 7200      // 2 hours
-          const warning3H = isTestMode ? 175 : 10500 // 175 minutes (5 min before 3h)
-          const hour3 = isTestMode ? 180 : 10800     // 3 hours
-          const warning4H = isTestMode ? 235 : 14100 // 235 minutes (5 min before 4h)
-          const hour4 = isTestMode ? 240 : 14400     // 4 hours
+          // Define thresholds (in seconds)
+          const warning1H = 3300   // 55 minutes
+          const hour1 = 3600      // 1 hour
+          const warning2H = 6900   // 115 minutes (5 min before 2h)
+          const hour2 = 7200      // 2 hours
+          const warning3H = 10500  // 175 minutes (5 min before 3h)
+          const hour3 = 10800      // 3 hours
+          const warning4H = 14100 // 235 minutes (5 min before 4h)
+          const hour4 = 14400     // 4 hours
           
           // Check milestones in reverse order (highest first)
           if (currentElapsedTime >= hour4 && !milestone4Hours.current) {
@@ -213,15 +206,15 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
             const newTime = prev + timeSinceLastUpdate
             lastUpdateTimeRef.current = now
             
-            // Define thresholds (in test mode: seconds = minutes, otherwise normal)
-            const warning1H = isTestMode ? 55 : 3300   // 55 minutes
-            const hour1 = isTestMode ? 60 : 3600       // 1 hour
-            const warning2H = isTestMode ? 115 : 6900    // 115 minutes (5 min before 2h)
-            const hour2 = isTestMode ? 120 : 7200       // 2 hours
-            const warning3H = isTestMode ? 175 : 10500   // 175 minutes (5 min before 3h)
-            const hour3 = isTestMode ? 180 : 10800      // 3 hours
-            const warning4H = isTestMode ? 235 : 14100  // 235 minutes (5 min before 4h)
-            const hour4 = isTestMode ? 240 : 14400      // 4 hours
+            // Define thresholds (in seconds)
+            const warning1H = 3300   // 55 minutes
+            const hour1 = 3600       // 1 hour
+            const warning2H = 6900   // 115 minutes (5 min before 2h)
+            const hour2 = 7200       // 2 hours
+            const warning3H = 10500  // 175 minutes (5 min before 3h)
+            const hour3 = 10800     // 3 hours
+            const warning4H = 14100 // 235 minutes (5 min before 4h)
+            const hour4 = 14400     // 4 hours
             
             // Check milestones in order (lowest to highest)
             // 5 minute warning before 1 hour
