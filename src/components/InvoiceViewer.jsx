@@ -8,9 +8,10 @@ const InvoiceViewer = ({ invoice, onClose, onPaid }) => {
 
   if (!invoice) return null
 
-  const handlePaid = () => {
+  const handlePaid = async () => {
     if (onPaid) {
-      onPaid(invoice.stations)
+      // Wait for the paid handler to complete (saves to database)
+      await onPaid(invoice.stations)
     }
     onClose()
   }

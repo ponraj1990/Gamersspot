@@ -276,10 +276,13 @@ function App() {
     )
   }
 
-  const handleInvoicePaid = (invoiceStations) => {
+  const handleInvoicePaid = async (invoiceStations) => {
     // Reset all stations that were in the invoice
-    setStations((prev) =>
-      prev.map((station) => {
+    // Use functional setState to ensure we get the latest state
+    let updatedStations = null
+    
+    setStations((prev) => {
+      updatedStations = prev.map((station) => {
         const invoiceStation = invoiceStations.find((is) => is.id === station.id)
         if (invoiceStation) {
           // Reset this station completely
@@ -297,7 +300,33 @@ function App() {
         }
         return station
       })
-    )
+      
+      // Update prevStationsRef to mark this as a critical change
+      prevStationsRef.current = updatedStations.map(s => ({ ...s }))
+      
+      return updatedStations
+    })
+    
+    // Save immediately to database (bypass throttling)
+    // Clear any pending save timeout first
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+      saveTimeoutRef.current = null
+    }
+    
+    try {
+      // Save the reset stations immediately
+      if (updatedStations) {
+        await saveStations(updatedStations)
+        console.log('Stations reset and saved to database after payment')
+        
+        // Reset the save timer to prevent immediate re-save
+        lastSaveTimeRef.current = Date.now()
+      }
+    } catch (error) {
+      console.error('Error saving reset stations to database:', error)
+      // Still update local state even if save fails
+    }
   }
 
   const handleStationDelete = (stationId) => {
