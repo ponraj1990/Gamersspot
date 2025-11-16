@@ -66,6 +66,30 @@ export default async function handler(req, res) {
       if (stations.length > 0) {
         // Insert stations one by one
         for (const station of stations) {
+          // Prepare values with explicit handling of falsy values (0, false, '')
+          const elapsedTime = station.elapsedTime !== undefined ? station.elapsedTime : 0
+          const isRunning = station.isRunning !== undefined ? station.isRunning : false
+          const isDone = station.isDone !== undefined ? station.isDone : false
+          const extraControllers = station.extraControllers !== undefined ? station.extraControllers : 0
+          const customerName = station.customerName !== undefined ? station.customerName : ''
+          const startTime = station.startTime || null
+          const endTime = station.endTime || null
+          const snacks = JSON.stringify(station.snacks || { cokeBottle: 0, cokeCan: 0 })
+          
+          // Log the values being saved for debugging
+          if (elapsedTime === 0 && isDone === false && extraControllers === 0 && customerName === '' && startTime === null) {
+            console.log(`[API] Saving reset station ${station.id} (${station.name}):`, {
+              elapsedTime,
+              isRunning,
+              isDone,
+              extraControllers,
+              customerName,
+              startTime,
+              endTime,
+              snacks
+            })
+          }
+          
           await client.query(`
             INSERT INTO stations (
               id, name, game_type, elapsed_time, is_running, is_done,
@@ -86,14 +110,14 @@ export default async function handler(req, res) {
             station.id,
             station.name,
             station.gameType || 'PS5',
-            station.elapsedTime || 0,
-            station.isRunning || false,
-            station.isDone || false,
-            station.extraControllers || 0,
-            JSON.stringify(station.snacks || { cokeBottle: 0, cokeCan: 0 }),
-            station.customerName || '',
-            station.startTime || null,
-            station.endTime || null
+            elapsedTime,
+            isRunning,
+            isDone,
+            extraControllers,
+            snacks,
+            customerName,
+            startTime,
+            endTime
           ]);
         }
       }

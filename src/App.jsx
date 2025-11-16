@@ -279,6 +279,8 @@ function App() {
   const handleInvoicePaid = async (invoiceStations) => {
     // Reset all stations that were in the invoice to their initial state
     // This clears completed sessions and resets stations completely
+    console.log('Paid button clicked - resetting stations:', invoiceStations.map(s => ({ id: s.id, name: s.name })))
+    
     // Use functional setState to ensure we get the latest state
     let updatedStations = null
     
@@ -289,19 +291,42 @@ function App() {
           // Reset this station completely to initial state
           // This clears it from "Completed Sessions" (isDone: false, elapsedTime: 0)
           // and from "Active Sessions" (isRunning: false)
+          // Create a clean reset object with only the properties we want
           const resetStation = {
-            ...station,
-            elapsedTime: 0,
-            isRunning: false,
-            isDone: false, // Clear completed session status
-            extraControllers: 0,
-            snacks: { cokeBottle: 0, cokeCan: 0 },
-            customerName: '',
-            startTime: null,
-            endTime: null,
+            id: station.id,
+            name: station.name,
+            gameType: station.gameType,
+            elapsedTime: 0, // Explicitly set to 0
+            isRunning: false, // Explicitly set to false
+            isDone: false, // Explicitly set to false - Clear completed session status
+            extraControllers: 0, // Explicitly set to 0
+            snacks: { cokeBottle: 0, cokeCan: 0 }, // Explicitly reset snacks
+            customerName: '', // Explicitly set to empty string
+            startTime: null, // Explicitly set to null
+            endTime: null, // Explicitly set to null
           }
           
-          console.log(`Resetting station ${station.name} to initial state after payment`)
+          console.log(`Resetting station ${station.name} (ID: ${station.id}) from:`, {
+            elapsedTime: station.elapsedTime,
+            isRunning: station.isRunning,
+            isDone: station.isDone,
+            extraControllers: station.extraControllers,
+            snacks: station.snacks,
+            customerName: station.customerName,
+            startTime: station.startTime,
+            endTime: station.endTime
+          })
+          console.log(`Resetting station ${station.name} (ID: ${station.id}) to:`, {
+            elapsedTime: resetStation.elapsedTime,
+            isRunning: resetStation.isRunning,
+            isDone: resetStation.isDone,
+            extraControllers: resetStation.extraControllers,
+            snacks: resetStation.snacks,
+            customerName: resetStation.customerName,
+            startTime: resetStation.startTime,
+            endTime: resetStation.endTime
+          })
+          
           return resetStation
         }
         return station
@@ -329,14 +354,29 @@ function App() {
     try {
       // Save the reset stations immediately
       if (updatedStations) {
+        console.log('Saving reset stations to database:', updatedStations.map(s => ({
+          id: s.id,
+          name: s.name,
+          elapsedTime: s.elapsedTime,
+          isRunning: s.isRunning,
+          isDone: s.isDone,
+          extraControllers: s.extraControllers,
+          snacks: s.snacks,
+          customerName: s.customerName,
+          startTime: s.startTime,
+          endTime: s.endTime
+        })))
+        
         await saveStations(updatedStations)
-        console.log('Stations reset and saved to database after payment - Completed Sessions cleared')
+        console.log('✅ Stations reset and saved to database after payment - Completed Sessions cleared')
         
         // Reset the save timer to prevent immediate re-save
         lastSaveTimeRef.current = Date.now()
+      } else {
+        console.error('❌ No updated stations to save')
       }
     } catch (error) {
-      console.error('Error saving reset stations to database:', error)
+      console.error('❌ Error saving reset stations to database:', error)
       // Still update local state even if save fails
     }
   }
