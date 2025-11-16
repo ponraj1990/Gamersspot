@@ -277,7 +277,8 @@ function App() {
   }
 
   const handleInvoicePaid = async (invoiceStations) => {
-    // Reset all stations that were in the invoice
+    // Reset all stations that were in the invoice to their initial state
+    // This clears completed sessions and resets stations completely
     // Use functional setState to ensure we get the latest state
     let updatedStations = null
     
@@ -285,24 +286,35 @@ function App() {
       updatedStations = prev.map((station) => {
         const invoiceStation = invoiceStations.find((is) => is.id === station.id)
         if (invoiceStation) {
-          // Reset this station completely
-          return {
+          // Reset this station completely to initial state
+          // This clears it from "Completed Sessions" (isDone: false, elapsedTime: 0)
+          // and from "Active Sessions" (isRunning: false)
+          const resetStation = {
             ...station,
             elapsedTime: 0,
             isRunning: false,
-            isDone: false,
+            isDone: false, // Clear completed session status
             extraControllers: 0,
             snacks: { cokeBottle: 0, cokeCan: 0 },
             customerName: '',
             startTime: null,
             endTime: null,
           }
+          
+          console.log(`Resetting station ${station.name} to initial state after payment`)
+          return resetStation
         }
         return station
       })
       
       // Update prevStationsRef to mark this as a critical change
       prevStationsRef.current = updatedStations.map(s => ({ ...s }))
+      
+      // Log how many completed sessions were cleared
+      const clearedCount = invoiceStations.filter(s => s.isDone || s.elapsedTime > 0).length
+      if (clearedCount > 0) {
+        console.log(`Cleared ${clearedCount} completed session(s) after payment`)
+      }
       
       return updatedStations
     })
@@ -318,7 +330,7 @@ function App() {
       // Save the reset stations immediately
       if (updatedStations) {
         await saveStations(updatedStations)
-        console.log('Stations reset and saved to database after payment')
+        console.log('Stations reset and saved to database after payment - Completed Sessions cleared')
         
         // Reset the save timer to prevent immediate re-save
         lastSaveTimeRef.current = Date.now()
