@@ -35,7 +35,8 @@ export default async function handler(req, res) {
           snacks,
           customer_name as "customerName",
           start_time as "startTime",
-          end_time as "endTime"
+          end_time as "endTime",
+          updated_at as "updatedAt"
         FROM stations
         ORDER BY id ASC
       `);

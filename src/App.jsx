@@ -61,6 +61,75 @@ function App() {
     return [...ps5Stations, steeringWheelStation, systemStation]
   }
 
+  // Recalculate elapsed time for running timers based on startTime and current time
+  const recalculateElapsedTime = (stations) => {
+    const now = Date.now()
+    let hasUpdates = false
+    const updatedStations = stations.map(station => {
+      // If timer is running and has a startTime, recalculate elapsed time
+      if (station.isRunning && station.startTime && !station.isDone) {
+        try {
+          // Parse startTime (format: "2:30 PM" or "14:30")
+          const timeString = station.startTime
+          
+          // If we have updatedAt, use it to calculate elapsed time since last save
+          // This is the most accurate method: elapsed_time + (current_time - updated_at)
+          if (station.updatedAt) {
+            const updatedAt = new Date(station.updatedAt).getTime()
+            const timeSinceUpdate = Math.floor((now - updatedAt) / 1000) // seconds
+            const newElapsedTime = (station.elapsedTime || 0) + timeSinceUpdate
+            
+            if (newElapsedTime !== station.elapsedTime) {
+              hasUpdates = true
+              return {
+                ...station,
+                elapsedTime: newElapsedTime
+              }
+            }
+          } else {
+            // Fallback: try to parse startTime string
+            // This is less accurate but better than nothing
+            const timeMatch = timeString.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i)
+            if (timeMatch) {
+              let hours = parseInt(timeMatch[1])
+              const minutes = parseInt(timeMatch[2])
+              const ampm = timeMatch[3]?.toUpperCase()
+              
+              if (ampm === 'PM' && hours !== 12) hours += 12
+              if (ampm === 'AM' && hours === 12) hours = 0
+              
+              // Create a date for today with the parsed time
+              const today = new Date()
+              const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes, 0)
+              
+              // If the time is in the future (e.g., started yesterday), assume it was yesterday
+              if (startDate > now) {
+                startDate.setDate(startDate.getDate() - 1)
+              }
+              
+              const elapsedSinceStart = Math.floor((now - startDate.getTime()) / 1000)
+              const newElapsedTime = Math.max(station.elapsedTime || 0, elapsedSinceStart)
+              
+              if (newElapsedTime !== station.elapsedTime) {
+                hasUpdates = true
+                return {
+                  ...station,
+                  elapsedTime: newElapsedTime
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error(`Error recalculating elapsed time for station ${station.id}:`, error)
+        }
+      }
+      
+      return station
+    })
+    
+    return { stations: updatedStations, hasUpdates }
+  }
+
   useEffect(() => {
     const fetchStations = async () => {
       try {
@@ -92,8 +161,20 @@ function App() {
             console.error('Error saving stations to database:', saveError)
           }
         } else {
-          // All default stations exist - use saved stations
-          setStations(savedStations)
+          // All default stations exist - recalculate elapsed time for running timers
+          const { stations: recalculatedStations, hasUpdates } = recalculateElapsedTime(savedStations)
+          
+          setStations(recalculatedStations)
+          
+          // If elapsed time was recalculated, save to database
+          if (hasUpdates) {
+            try {
+              await saveStations(recalculatedStations)
+              console.log('Recalculated and updated elapsed time for running timers')
+            } catch (saveError) {
+              console.error('Error saving recalculated elapsed time:', saveError)
+            }
+          }
         }
       } catch (error) {
         console.error('Error loading stations:', error)
