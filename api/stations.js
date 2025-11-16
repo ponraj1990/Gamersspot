@@ -1,4 +1,4 @@
-import { sql } from '@vercel/postgres';
+import { getDbClient, closeDbClient } from './db.js';
 
 export default async function handler(req, res) {
   // Set CORS headers
@@ -10,10 +10,15 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // Get database client (local or Vercel)
+  let db = null;
   try {
+    db = await getDbClient();
+    const client = db.client;
+    
     if (req.method === 'GET') {
       // Get all stations
-      const { rows } = await sql`
+      const { rows } = await client.query(`
         SELECT 
           id,
           name,
@@ -28,7 +33,7 @@ export default async function handler(req, res) {
           end_time as "endTime"
         FROM stations
         ORDER BY id ASC
-      `;
+      `);
       
       // Transform snacks from JSONB to object
       const stations = rows.map(row => ({
@@ -36,6 +41,7 @@ export default async function handler(req, res) {
         snacks: typeof row.snacks === 'string' ? JSON.parse(row.snacks) : row.snacks
       }));
 
+      await closeDbClient(db);
       return res.status(200).json(stations);
     }
 
@@ -44,32 +50,21 @@ export default async function handler(req, res) {
       const { stations } = req.body;
 
       if (!Array.isArray(stations)) {
+        await closeDbClient(db);
         return res.status(400).json({ error: 'Stations must be an array' });
       }
 
-      // Delete all existing stations and insert new ones
-      await sql`DELETE FROM stations`;
+      // Delete all existing stations
+      await client.query('DELETE FROM stations');
 
       if (stations.length > 0) {
-        // Insert stations one by one (simpler approach)
+        // Insert stations one by one
         for (const station of stations) {
-          await sql`
+          await client.query(`
             INSERT INTO stations (
               id, name, game_type, elapsed_time, is_running, is_done,
               extra_controllers, snacks, customer_name, start_time, end_time
-            ) VALUES (
-              ${station.id},
-              ${station.name},
-              ${station.gameType || 'PS5'},
-              ${station.elapsedTime || 0},
-              ${station.isRunning || false},
-              ${station.isDone || false},
-              ${station.extraControllers || 0},
-              ${JSON.stringify(station.snacks || { cokeBottle: 0, cokeCan: 0 })},
-              ${station.customerName || ''},
-              ${station.startTime || null},
-              ${station.endTime || null}
-            )
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (id) DO UPDATE SET
               name = EXCLUDED.name,
               game_type = EXCLUDED.game_type,
@@ -81,10 +76,23 @@ export default async function handler(req, res) {
               customer_name = EXCLUDED.customer_name,
               start_time = EXCLUDED.start_time,
               end_time = EXCLUDED.end_time
-          `;
+          `, [
+            station.id,
+            station.name,
+            station.gameType || 'PS5',
+            station.elapsedTime || 0,
+            station.isRunning || false,
+            station.isDone || false,
+            station.extraControllers || 0,
+            JSON.stringify(station.snacks || { cokeBottle: 0, cokeCan: 0 }),
+            station.customerName || '',
+            station.startTime || null,
+            station.endTime || null
+          ]);
         }
       }
 
+      await closeDbClient(db);
       return res.status(200).json({ success: true, count: stations.length });
     }
 
@@ -93,36 +101,71 @@ export default async function handler(req, res) {
       const { id, ...updates } = req.body;
 
       if (!id) {
+        await closeDbClient(db);
         return res.status(400).json({ error: 'Station ID is required' });
       }
 
       // Build update query dynamically
       const updateParts = [];
-      if (updates.name !== undefined) updateParts.push(sql`name = ${updates.name}`);
-      if (updates.gameType !== undefined) updateParts.push(sql`game_type = ${updates.gameType}`);
-      if (updates.elapsedTime !== undefined) updateParts.push(sql`elapsed_time = ${updates.elapsedTime}`);
-      if (updates.isRunning !== undefined) updateParts.push(sql`is_running = ${updates.isRunning}`);
-      if (updates.isDone !== undefined) updateParts.push(sql`is_done = ${updates.isDone}`);
-      if (updates.extraControllers !== undefined) updateParts.push(sql`extra_controllers = ${updates.extraControllers}`);
-      if (updates.snacks !== undefined) updateParts.push(sql`snacks = ${JSON.stringify(updates.snacks)}`);
-      if (updates.customerName !== undefined) updateParts.push(sql`customer_name = ${updates.customerName}`);
-      if (updates.startTime !== undefined) updateParts.push(sql`start_time = ${updates.startTime}`);
-      if (updates.endTime !== undefined) updateParts.push(sql`end_time = ${updates.endTime}`);
+      const values = [];
+      let paramIndex = 1;
+
+      if (updates.name !== undefined) {
+        updateParts.push(`name = $${paramIndex++}`);
+        values.push(updates.name);
+      }
+      if (updates.gameType !== undefined) {
+        updateParts.push(`game_type = $${paramIndex++}`);
+        values.push(updates.gameType);
+      }
+      if (updates.elapsedTime !== undefined) {
+        updateParts.push(`elapsed_time = $${paramIndex++}`);
+        values.push(updates.elapsedTime);
+      }
+      if (updates.isRunning !== undefined) {
+        updateParts.push(`is_running = $${paramIndex++}`);
+        values.push(updates.isRunning);
+      }
+      if (updates.isDone !== undefined) {
+        updateParts.push(`is_done = $${paramIndex++}`);
+        values.push(updates.isDone);
+      }
+      if (updates.extraControllers !== undefined) {
+        updateParts.push(`extra_controllers = $${paramIndex++}`);
+        values.push(updates.extraControllers);
+      }
+      if (updates.snacks !== undefined) {
+        updateParts.push(`snacks = $${paramIndex++}`);
+        values.push(JSON.stringify(updates.snacks));
+      }
+      if (updates.customerName !== undefined) {
+        updateParts.push(`customer_name = $${paramIndex++}`);
+        values.push(updates.customerName);
+      }
+      if (updates.startTime !== undefined) {
+        updateParts.push(`start_time = $${paramIndex++}`);
+        values.push(updates.startTime);
+      }
+      if (updates.endTime !== undefined) {
+        updateParts.push(`end_time = $${paramIndex++}`);
+        values.push(updates.endTime);
+      }
 
       if (updateParts.length === 0) {
+        await closeDbClient(db);
         return res.status(400).json({ error: 'No fields to update' });
       }
 
-      const setClause = updateParts.reduce((acc, curr, index) => 
-        index === 0 ? curr : sql`${acc}, ${curr}`
-      );
-
-      await sql`
+      values.push(id);
+      const query = `
         UPDATE stations
-        SET ${setClause}
-        WHERE id = ${id}
+        SET ${updateParts.join(', ')}
+        WHERE id = $${paramIndex}
       `;
 
+      await client.query(query, values);
+
+      await closeDbClient(db);
       return res.status(200).json({ success: true });
     }
 
@@ -131,17 +174,21 @@ export default async function handler(req, res) {
       const { id } = req.query;
 
       if (!id) {
+        await closeDbClient(db);
         return res.status(400).json({ error: 'Station ID is required' });
       }
 
-      await sql`DELETE FROM stations WHERE id = ${id}`;
+      await client.query('DELETE FROM stations WHERE id = $1', [id]);
 
+      await closeDbClient(db);
       return res.status(200).json({ success: true });
     }
 
+    await closeDbClient(db);
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
     console.error('Database error:', error);
+    await closeDbClient(db);
     return res.status(500).json({ error: error.message });
   }
 }

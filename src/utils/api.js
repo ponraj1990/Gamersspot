@@ -84,3 +84,35 @@ export const invoicesAPI = {
   },
 };
 
+// Reports API
+export const reportsAPI = {
+  async getUsageReport(date) {
+    const dateParam = date ? `?type=usage&date=${date}` : '?type=usage';
+    const response = await fetch(`${API_BASE_URL}/reports${dateParam}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch usage report');
+    }
+    return response.json();
+  },
+
+  async getDailyRevenue(date) {
+    const dateParam = date ? `?type=daily-revenue&date=${date}` : '?type=daily-revenue';
+    const response = await fetch(`${API_BASE_URL}/reports${dateParam}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch daily revenue');
+    }
+    return response.json();
+  },
+
+  async getMonthlyRevenue(month, year) {
+    const params = new URLSearchParams({ type: 'monthly-revenue' });
+    if (month) params.append('month', month);
+    if (year) params.append('year', year);
+    const response = await fetch(`${API_BASE_URL}/reports?${params}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch monthly revenue');
+    }
+    return response.json();
+  },
+};
+

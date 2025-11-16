@@ -11,109 +11,258 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
   const [showNameInput, setShowNameInput] = useState(false)
   const [customerNameInput, setCustomerNameInput] = useState('')
   const [startTime, setStartTime] = useState(null)
+  const [isEditingCustomerName, setIsEditingCustomerName] = useState(false)
+  const [editingCustomerName, setEditingCustomerName] = useState('')
   const nameInputRef = useRef(null)
+  const editNameInputRef = useRef(null)
   const intervalRef = useRef(null)
+  const timerStartTimeRef = useRef(null) // Track when timer actually started (timestamp)
+  const lastUpdateTimeRef = useRef(null) // Track last update time for sync
   const milestone1Hour = useRef(false)
   const milestone2Hours = useRef(false)
   const milestone3Hours = useRef(false)
+  const isSyncingFromParent = useRef(false)
+  const prevStationRef = useRef({ 
+    elapsedTime: station.elapsedTime, 
+    isRunning: station.isRunning, 
+    isDone: station.isDone,
+    customerName: station.customerName || '',
+    startTime: station.startTime || null,
+    endTime: station.endTime || null
+  })
 
+  // Calculate elapsed time based on actual timestamps (works even when tab is inactive)
+  const calculateElapsedTime = () => {
+    if (!isRunning || !timerStartTimeRef.current) {
+      return elapsedTime
+    }
+    const now = Date.now()
+    const elapsedSeconds = Math.floor((now - timerStartTimeRef.current) / 1000)
+    return elapsedTime + elapsedSeconds
+  }
+
+  // Update timer using timestamps (works even when tab is inactive)
   useEffect(() => {
     if (isRunning) {
-      intervalRef.current = setInterval(() => {
-        setElapsedTime((prev) => {
-          const newTime = prev + 1
-          
-          // Announce milestones for bonus time
-          // Note: PS5 and Steering Wheel games only get bonus time on weekdays (Monday-Friday)
-          const hours = newTime / 3600
-          const gameType = station.gameType || GAME_TYPES.PLAYSTATION
-          const dayType = getDayType()
-          const isWeekendNoBonus = (gameType === GAME_TYPES.PLAYSTATION || gameType === GAME_TYPES.STEERING_WHEEL) && dayType === 'weekend'
-          
-          // 1 hour milestone (3600 seconds) - only announce bonus on weekdays for PS5 and Steering Wheel
-          if (hours >= 1 && !milestone1Hour.current) {
-            milestone1Hour.current = true
-            if (isWeekendNoBonus) {
-              const message = `${station.name} - 1 hour played`
-              playAlarm(message, false)
-            } else {
-              const message = `${station.name} - 1 hour played, 15 minutes bonus time`
-              playAlarm(message, false)
+      // Initialize timer start time if not set
+      if (!timerStartTimeRef.current) {
+        timerStartTimeRef.current = Date.now()
+        lastUpdateTimeRef.current = Date.now()
+      }
+
+      // Function to update elapsed time based on actual time passed
+      const updateTimer = () => {
+        const now = Date.now()
+        const timeSinceLastUpdate = Math.floor((now - lastUpdateTimeRef.current) / 1000)
+        
+        if (timeSinceLastUpdate > 0) {
+          setElapsedTime((prev) => {
+            const newTime = prev + timeSinceLastUpdate
+            lastUpdateTimeRef.current = now
+            
+            // Announce milestones for bonus time
+            // Note: PS5 and Steering Wheel games only get bonus time on weekdays (Monday-Friday)
+            const hours = newTime / 3600
+            const gameType = station.gameType || GAME_TYPES.PLAYSTATION
+            const dayType = getDayType()
+            const isWeekendNoBonus = (gameType === GAME_TYPES.PLAYSTATION || gameType === GAME_TYPES.STEERING_WHEEL) && dayType === 'weekend'
+            
+            // 1 hour milestone (3600 seconds) - only announce bonus on weekdays for PS5 and Steering Wheel
+            if (hours >= 1 && !milestone1Hour.current) {
+              milestone1Hour.current = true
+              if (isWeekendNoBonus) {
+                const message = `${station.name} - 1 hour played`
+                playAlarm(message, false)
+              } else {
+                const message = `${station.name} - 1 hour played, 15 minutes bonus time`
+                playAlarm(message, false)
+              }
             }
-          }
-          
-          // 2 hours milestone (7200 seconds) - only announce bonus on weekdays for PS5 and Steering Wheel
-          if (hours >= 2 && !milestone2Hours.current) {
-            milestone2Hours.current = true
-            if (isWeekendNoBonus) {
-              const message = `${station.name} - 2 hours played`
-              playAlarm(message, false)
-            } else {
-              const message = `${station.name} - 2 hours played, 30 minutes bonus time`
-              playAlarm(message, false)
+            
+            // 2 hours milestone (7200 seconds) - only announce bonus on weekdays for PS5 and Steering Wheel
+            if (hours >= 2 && !milestone2Hours.current) {
+              milestone2Hours.current = true
+              if (isWeekendNoBonus) {
+                const message = `${station.name} - 2 hours played`
+                playAlarm(message, false)
+              } else {
+                const message = `${station.name} - 2 hours played, 30 minutes bonus time`
+                playAlarm(message, false)
+              }
             }
-          }
-          
-          // 3 hours milestone (10800 seconds) - only announce bonus on weekdays for PS5 and Steering Wheel
-          if (hours >= 3 && !milestone3Hours.current) {
-            milestone3Hours.current = true
-            if (isWeekendNoBonus) {
-              const message = `${station.name} - 3 hours played`
-              playAlarm(message, false)
-            } else {
-              const message = `${station.name} - 3 hours played, 1 hour bonus time`
-              playAlarm(message, false)
+            
+            // 3 hours milestone (10800 seconds) - only announce bonus on weekdays for PS5 and Steering Wheel
+            if (hours >= 3 && !milestone3Hours.current) {
+              milestone3Hours.current = true
+              if (isWeekendNoBonus) {
+                const message = `${station.name} - 3 hours played`
+                playAlarm(message, false)
+              } else {
+                const message = `${station.name} - 3 hours played, 1 hour bonus time`
+                playAlarm(message, false)
+              }
             }
-          }
-          
-          return newTime
-        })
-      }, 1000)
+            
+            return newTime
+          })
+        }
+      }
+
+      // Update immediately
+      updateTimer()
+
+      // Set up interval for UI updates (but calculation is based on timestamps)
+      intervalRef.current = setInterval(updateTimer, 1000)
+
+      // Handle page visibility changes (when tab becomes active again)
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible' && isRunning) {
+          // Recalculate elapsed time when tab becomes visible
+          updateTimer()
+        }
+      }
+
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+
+      return () => {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current)
+          intervalRef.current = null
+        }
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
     } else {
+      // Timer stopped - clear start time
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
         intervalRef.current = null
       }
+      timerStartTimeRef.current = null
+      lastUpdateTimeRef.current = null
     }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRunning, station.name])
 
-  // Sync local state when station is reset from parent (only when explicitly reset via Reset All)
+  // Sync local state when station is reset from parent (including when Paid is clicked)
   useEffect(() => {
-    // Sync isDone state from parent
-    if (station.isDone !== undefined && station.isDone !== isDone) {
-      setIsDone(station.isDone)
+    // Check if station prop actually changed (not just a re-render)
+    const stationChanged = prevStationRef.current.elapsedTime !== station.elapsedTime ||
+                          prevStationRef.current.isRunning !== station.isRunning ||
+                          prevStationRef.current.isDone !== station.isDone ||
+                          prevStationRef.current.customerName !== (station.customerName || '') ||
+                          prevStationRef.current.startTime !== (station.startTime || null) ||
+                          prevStationRef.current.endTime !== (station.endTime || null)
+    
+    if (!stationChanged) {
+      prevStationRef.current = { 
+        elapsedTime: station.elapsedTime, 
+        isRunning: station.isRunning, 
+        isDone: station.isDone,
+        customerName: station.customerName || '',
+        startTime: station.startTime || null,
+        endTime: station.endTime || null
+      }
+      return
     }
     
-    // Only sync reset if parent was explicitly reset: elapsedTime is 0, not running
-    // AND station is NOT done (done stations should not be reset)
-    // AND our local state doesn't match (we have time or are running)
-    if (!station.isDone && station.elapsedTime === 0 && !station.isRunning && (elapsedTime > 0 || isRunning || isDone)) {
+    // Sync isDone state from parent (only if different)
+    if (station.isDone !== undefined && station.isDone !== isDone) {
+      isSyncingFromParent.current = true
+      setIsDone(station.isDone)
+      prevStationRef.current = { 
+        elapsedTime: station.elapsedTime, 
+        isRunning: station.isRunning, 
+        isDone: station.isDone,
+        customerName: station.customerName || '',
+        startTime: station.startTime || null,
+        endTime: station.endTime || null
+      }
+      setTimeout(() => { isSyncingFromParent.current = false }, 10)
+      // Don't return here, continue to check for full reset
+    }
+    
+    // Check if parent has reset the station (after Paid button or Reset All)
+    // Reset condition: elapsedTime is 0, not running, not done, no customer name, no times
+    const isFullyReset = station.elapsedTime === 0 && 
+                        !station.isRunning && 
+                        !station.isDone &&
+                        (!station.customerName || station.customerName === '') &&
+                        !station.startTime &&
+                        !station.endTime
+    
+    // Sync if parent has reset and local state doesn't match
+    if (isFullyReset && (elapsedTime > 0 || isRunning || isDone || showNameInput || isEditingCustomerName)) {
+      isSyncingFromParent.current = true
       setElapsedTime(0)
       setIsRunning(false)
       setIsDone(false)
+      setShowNameInput(false)
+      setCustomerNameInput('')
+      setIsEditingCustomerName(false)
+      setEditingCustomerName('')
+      setStartTime(null)
+      timerStartTimeRef.current = null
+      lastUpdateTimeRef.current = null
       milestone1Hour.current = false
       milestone2Hours.current = false
       milestone3Hours.current = false
+      prevStationRef.current = { 
+        elapsedTime: station.elapsedTime, 
+        isRunning: station.isRunning, 
+        isDone: station.isDone,
+        customerName: station.customerName || '',
+        startTime: station.startTime || null,
+        endTime: station.endTime || null
+      }
+      setTimeout(() => { isSyncingFromParent.current = false }, 10)
+    } else {
+      // Update prevStationRef even if we don't sync
+      prevStationRef.current = { 
+        elapsedTime: station.elapsedTime, 
+        isRunning: station.isRunning, 
+        isDone: station.isDone,
+        customerName: station.customerName || '',
+        startTime: station.startTime || null,
+        endTime: station.endTime || null
+      }
     }
-  }, [station.elapsedTime, station.isRunning, station.isDone])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [station.elapsedTime, station.isRunning, station.isDone, station.customerName, station.startTime, station.endTime])
 
+  // Update parent only when local state changes, not when station prop changes
+  const prevStateRef = useRef({ elapsedTime, isRunning, isDone })
   useEffect(() => {
-    // Only update if values actually changed to prevent loops
-    if (station.elapsedTime !== elapsedTime || station.isRunning !== isRunning || station.isDone !== isDone) {
-      onUpdate({
-        ...station,
-        elapsedTime,
-        isRunning,
-        isDone,
-      })
+    // Skip if we're syncing from parent to prevent loops
+    if (isSyncingFromParent.current) {
+      prevStateRef.current = { elapsedTime, isRunning, isDone }
+      return
     }
-  }, [elapsedTime, isRunning, isDone, station])
+    
+    // Only update if local state actually changed (not just prop change)
+    const stateChanged = prevStateRef.current.elapsedTime !== elapsedTime || 
+                         prevStateRef.current.isRunning !== isRunning || 
+                         prevStateRef.current.isDone !== isDone
+    
+    if (stateChanged) {
+      // Only call onUpdate if values are different from station prop
+      // This prevents updating when we just synced from parent
+      // Also check if local state matches station prop (means we synced, don't update)
+      const localMatchesProp = station.elapsedTime === elapsedTime && 
+                               station.isRunning === isRunning && 
+                               station.isDone === isDone
+      
+      if (!localMatchesProp) {
+        onUpdate({
+          ...station,
+          elapsedTime,
+          isRunning,
+          isDone,
+        })
+      }
+      prevStateRef.current = { elapsedTime, isRunning, isDone }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elapsedTime, isRunning, isDone])
 
   const handleStart = () => {
     if (!isRunning && !showNameInput) {
@@ -133,6 +282,9 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
           isRunning: true,
           startTime: timeString,
         })
+        // Announce start with station name and time
+        const startMessage = `${station.name} starting time ${timeString} started`
+        playAlarm(startMessage, false)
       } else {
         // Show name input field if no name exists
         // Store start time temporarily until name is saved
@@ -157,6 +309,11 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
       nameInputRef.current?.focus()
       return
     }
+    // Initialize timer start timestamp if not already set
+    if (!timerStartTimeRef.current) {
+      timerStartTimeRef.current = Date.now()
+      lastUpdateTimeRef.current = Date.now()
+    }
     // Update station with customer name, start time, and start timer
     onUpdate({
       ...station,
@@ -167,6 +324,13 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
     setIsRunning(true)
     setShowNameInput(false)
     setCustomerNameInput('')
+    
+    // Announce start with station name and time
+    if (startTime) {
+      const startMessage = `${station.name} starting time ${startTime} started`
+      playAlarm(startMessage, false)
+    }
+    
     setStartTime(null)
   }
 
@@ -197,6 +361,34 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
     setStartTime(null)
   }
 
+  const handleCustomerNameClick = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsEditingCustomerName(true)
+    setEditingCustomerName(station.customerName || '')
+    setTimeout(() => {
+      if (editNameInputRef.current) {
+        editNameInputRef.current.focus()
+        editNameInputRef.current.select()
+      }
+    }, 100)
+  }
+
+  const handleCustomerNameSave = () => {
+    const trimmedName = editingCustomerName.trim()
+    onUpdate({
+      ...station,
+      customerName: trimmedName || station.customerName
+    })
+    setIsEditingCustomerName(false)
+    setEditingCustomerName('')
+  }
+
+  const handleCustomerNameCancel = () => {
+    setIsEditingCustomerName(false)
+    setEditingCustomerName('')
+  }
+
   const handlePause = () => {
     setIsRunning(false)
   }
@@ -211,6 +403,8 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
     setIsRunning(false)
     setElapsedTime(0)
     setIsDone(false)
+    timerStartTimeRef.current = null
+    lastUpdateTimeRef.current = null
     milestone1Hour.current = false
     milestone2Hours.current = false
     milestone3Hours.current = false
@@ -313,21 +507,66 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
               <span className="text-[10px] bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded font-semibold uppercase tracking-wider border border-orange-500/30" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Done</span>
             )}
           </div>
-          {station.customerName && (
-            <p className="text-xs text-slate-400 mt-1 font-semibold" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
-              👤 {station.customerName}
+          {isEditingCustomerName ? (
+            <div className="flex items-center gap-2 mt-1">
+              <input
+                ref={editNameInputRef}
+                type="text"
+                value={editingCustomerName}
+                onChange={(e) => setEditingCustomerName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleCustomerNameSave()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    handleCustomerNameCancel()
+                  }
+                }}
+                className={`text-xs px-2 py-1 border border-${gameColor}-500/30 rounded bg-slate-900/50 text-slate-100 focus:outline-none focus:ring-1 focus:ring-${gameColor}-500/50 font-semibold`}
+                style={{ fontFamily: 'Rajdhani, sans-serif' }}
+                placeholder="Customer name"
+              />
+              <button
+                onClick={handleCustomerNameSave}
+                className={`text-xs px-2 py-1 bg-${gameColor}-500/20 text-${gameColor}-400 rounded hover:bg-${gameColor}-500/30 transition-colors font-semibold`}
+                style={{ fontFamily: 'Rajdhani, sans-serif' }}
+                title="Save"
+              >
+                ✓
+              </button>
+              <button
+                onClick={handleCustomerNameCancel}
+                className="text-xs px-2 py-1 bg-slate-700/50 text-slate-400 rounded hover:bg-slate-700/70 transition-colors font-semibold"
+                style={{ fontFamily: 'Rajdhani, sans-serif' }}
+                title="Cancel"
+              >
+                ×
+              </button>
+            </div>
+          ) : station.customerName ? (
+            <div className="mt-1 relative z-10">
+              <span 
+                className="text-xs text-slate-400 font-semibold cursor-pointer hover:text-cyan-300 transition-colors underline decoration-dotted decoration-slate-500 hover:decoration-cyan-400"
+                style={{ fontFamily: 'Rajdhani, sans-serif' }}
+                onClick={handleCustomerNameClick}
+                onDoubleClick={handleCustomerNameClick}
+                title="Click or double-click to edit customer name"
+              >
+                👤 {station.customerName}
+              </span>
               {station.startTime && (
-                <span className={`ml-2 text-${gameColor}-300`}>
+                <span className={`ml-2 text-${gameColor}-300 text-xs`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>
                   🕐 {station.startTime}
                 </span>
               )}
               {station.endTime && (
-                <span className={`ml-2 text-orange-300`}>
+                <span className={`ml-2 text-orange-300 text-xs`} style={{ fontFamily: 'Rajdhani, sans-serif' }}>
                   🕐 {station.endTime}
                 </span>
               )}
-            </p>
-          )}
+            </div>
+          ) : null}
         </div>
         {station.id > 7 && (
           <button
@@ -485,7 +724,6 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
               onChange={handleExtraControllerChange}
               className={`flex-1 px-2 py-1 text-xs border border-${gameColor}-500/30 rounded-lg bg-slate-900/50 text-slate-200 focus:outline-none focus:ring-2 focus:ring-${gameColor}-500/50 focus:border-${gameColor}-500 font-semibold`}
               style={{ fontFamily: 'Rajdhani, sans-serif' }}
-              disabled={isDone}
             >
               <option value="0" className="bg-slate-800">0 (+0Rs)</option>
               <option value="1" className="bg-slate-800">1 (+50Rs)</option>
@@ -509,7 +747,6 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
                 onChange={(e) => handleSnackChange('cokeBottle', e.target.value)}
                 className={`flex-1 px-1.5 py-1 text-[10px] border border-${gameColor}-500/30 rounded-lg bg-slate-900/50 text-slate-200 focus:outline-none focus:ring-1 focus:ring-${gameColor}-500/50 focus:border-${gameColor}-500 font-semibold`}
                 style={{ fontFamily: 'Rajdhani, sans-serif' }}
-                disabled={isDone}
               >
                 <option value="0" className="bg-slate-800">0</option>
                 <option value="1" className="bg-slate-800">1</option>
@@ -530,7 +767,6 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
                 onChange={(e) => handleSnackChange('cokeCan', e.target.value)}
                 className={`flex-1 px-1.5 py-1 text-[10px] border border-${gameColor}-500/30 rounded-lg bg-slate-900/50 text-slate-200 focus:outline-none focus:ring-1 focus:ring-${gameColor}-500/50 focus:border-${gameColor}-500 font-semibold`}
                 style={{ fontFamily: 'Rajdhani, sans-serif' }}
-                disabled={isDone}
               >
                 <option value="0" className="bg-slate-800">0</option>
                 <option value="1" className="bg-slate-800">1</option>

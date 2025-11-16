@@ -1,4 +1,4 @@
-import { sql } from '@vercel/postgres';
+import { getDbClient, closeDbClient } from './db.js';
 
 export default async function handler(req, res) {
   // Set CORS headers
@@ -10,23 +10,29 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // Get database client (local or Vercel)
+  let db = null;
   try {
+    db = await getDbClient();
+    const client = db.client;
+
     if (req.method === 'GET') {
       // Get all invoices or a specific invoice
       const { invoiceNumber } = req.query;
 
       if (invoiceNumber) {
-        const { rows } = await sql`
-          SELECT * FROM invoices
-          WHERE invoice_number = ${invoiceNumber}
-          ORDER BY created_at DESC
-        `;
+        const { rows } = await client.query(
+          'SELECT * FROM invoices WHERE invoice_number = $1 ORDER BY created_at DESC',
+          [invoiceNumber]
+        );
         
         if (rows.length === 0) {
+          await closeDbClient(db);
           return res.status(404).json({ error: 'Invoice not found' });
         }
 
         const invoice = rows[0];
+        await closeDbClient(db);
         return res.status(200).json({
           invoiceNumber: invoice.invoice_number,
           stations: typeof invoice.stations === 'string' ? JSON.parse(invoice.stations) : invoice.stations,
@@ -38,7 +44,7 @@ export default async function handler(req, res) {
       }
 
       // Get all invoices
-      const { rows } = await sql`
+      const { rows } = await client.query(`
         SELECT 
           invoice_number as "invoiceNumber",
           subtotal,
@@ -48,8 +54,9 @@ export default async function handler(req, res) {
         FROM invoices
         ORDER BY created_at DESC
         LIMIT 100
-      `;
+      `);
 
+      await closeDbClient(db);
       return res.status(200).json(rows);
     }
 
@@ -58,26 +65,40 @@ export default async function handler(req, res) {
       const { invoiceNumber, stations, subtotal, discount, total } = req.body;
 
       if (!invoiceNumber || !stations || total === undefined) {
+        await closeDbClient(db);
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
-      await sql`
-        INSERT INTO invoices (invoice_number, stations, subtotal, discount, total)
-        VALUES (
-          ${invoiceNumber},
-          ${JSON.stringify(stations)},
-          ${subtotal || total},
-          ${discount || 0},
-          ${total}
-        )
-      `;
+      // Debug: Log stations data to see if customerName is included
+      console.log('Creating invoice:', invoiceNumber);
+      console.log('Stations data:', JSON.stringify(stations, null, 2));
+      if (Array.isArray(stations)) {
+        stations.forEach((station, index) => {
+          console.log(`Station ${index} customerName:`, station.customerName);
+        });
+      }
 
+      await client.query(
+        `INSERT INTO invoices (invoice_number, stations, subtotal, discount, total)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          invoiceNumber,
+          JSON.stringify(stations),
+          subtotal || total,
+          discount || 0,
+          total
+        ]
+      );
+
+      await closeDbClient(db);
       return res.status(201).json({ success: true, invoiceNumber });
     }
 
+    await closeDbClient(db);
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
     console.error('Database error:', error);
+    await closeDbClient(db);
     return res.status(500).json({ error: error.message });
   }
 }

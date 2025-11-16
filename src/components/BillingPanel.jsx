@@ -3,12 +3,12 @@ import { formatTime } from '../utils/timer'
 import { calculateCost, getRate, GAME_TYPES, getDayType, calculatePaidHours, getExtraControllerRate, getBonusTime, getExtraTimePlayed, getCokeBottleRate, getCokeCanRate } from '../utils/pricing'
 
 const BillingPanel = ({ stations, onGenerateInvoice }) => {
-  const [selectedStations, setSelectedStations] = useState([])
-  const [highlightedStations, setHighlightedStations] = useState([])
+  const [selectedStation, setSelectedStation] = useState(null) // Single selection only
+  const [highlightedStation, setHighlightedStation] = useState(null)
   const [discount, setDiscount] = useState(0)
   const previousDoneStations = useRef(new Set())
   
-  // Auto-select stations when they are marked as done
+  // Auto-select station when it is marked as done (only one at a time)
   useEffect(() => {
     const doneStations = stations
       .filter(s => s.isDone === true && (s.elapsedTime || 0) > 0)
@@ -21,19 +21,16 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
     const newlyDone = doneStations.filter(id => !previousDoneSet.has(id))
     
     if (newlyDone.length > 0) {
-      // Automatically select newly done stations
-      setSelectedStations(prev => {
-        const newSelection = [...new Set([...prev, ...newlyDone])]
-        return newSelection
-      })
+      // Automatically select the first newly done station (single selection)
+      const newStationId = newlyDone[0]
+      setSelectedStation(newStationId)
       
-      // Highlight them with animation
-      setHighlightedStations(newlyDone)
+      // Highlight it with animation
+      setHighlightedStation(newStationId)
       
-      // Scroll to the first newly done station
+      // Scroll to the newly done station
       setTimeout(() => {
-        const firstNewStationId = newlyDone[0]
-        const stationElement = document.getElementById(`billing-station-${firstNewStationId}`)
+        const stationElement = document.getElementById(`billing-station-${newStationId}`)
         if (stationElement) {
           stationElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
         }
@@ -41,7 +38,7 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
       
       // Remove highlight after animation
       setTimeout(() => {
-        setHighlightedStations([])
+        setHighlightedStation(null)
       }, 2000)
     }
     
@@ -49,27 +46,23 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
     previousDoneStations.current = currentDoneSet
   }, [stations])
 
-  const toggleStation = (stationId) => {
-    setSelectedStations((prev) =>
-      prev.includes(stationId)
-        ? prev.filter((id) => id !== stationId)
-        : [...prev, stationId]
-    )
+  const selectStation = (stationId) => {
+    // Single selection: if clicking the same station, deselect it; otherwise select the new one
+    setSelectedStation(prev => prev === stationId ? null : stationId)
   }
 
   const getSubtotal = () => {
-    return selectedStations.reduce((total, stationId) => {
-      const station = stations.find((s) => s.id === stationId)
-      if (!station) return total
-      const elapsed = station.elapsedTime || 0
-      const gameType = station.gameType || 'PlayStation'
-      return total + calculateCost(
-        elapsed,
-        gameType,
-        station.extraControllers || 0,
-        station.snacks || {}
-      )
-    }, 0)
+    if (!selectedStation) return 0
+    const station = stations.find((s) => s.id === selectedStation)
+    if (!station) return 0
+    const elapsed = station.elapsedTime || 0
+    const gameType = station.gameType || 'PlayStation'
+    return calculateCost(
+      elapsed,
+      gameType,
+      station.extraControllers || 0,
+      station.snacks || {}
+    )
   }
 
   const getTotalCost = () => {
@@ -79,24 +72,25 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
   }
 
   const handleGenerateInvoice = () => {
-    const invoiceStations = stations.filter((s) => selectedStations.includes(s.id))
+    if (!selectedStation) return
+    const invoiceStations = stations.filter((s) => s.id === selectedStation)
     onGenerateInvoice(invoiceStations, getTotalCost(), parseFloat(discount) || 0)
-    setSelectedStations([])
+    setSelectedStation(null)
     setDiscount(0)
   }
 
   return (
-    <div className="gaming-card rounded-xl p-5 sticky top-4 relative overflow-hidden">
+    <div className="gaming-card rounded-xl p-3 sm:p-4 lg:p-5 sticky top-4 relative overflow-hidden">
       <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl"></div>
       <div className="relative z-10">
-        <div className="mb-5">
-          <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400" style={{ fontFamily: 'Orbitron, sans-serif' }}>BILLING</h2>
-          <div className="h-0.5 w-16 bg-gradient-to-r from-cyan-400 to-purple-400 mt-1"></div>
+        <div className="mb-4 sm:mb-5">
+          <h2 className="text-lg sm:text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400" style={{ fontFamily: 'Orbitron, sans-serif' }}>BILLING</h2>
+          <div className="h-0.5 w-12 sm:w-16 bg-gradient-to-r from-cyan-400 to-purple-400 mt-1"></div>
         </div>
         
-        <div className="mb-5 p-3 bg-slate-800/50 rounded-lg border border-purple-500/20">
-          <div className="font-semibold text-purple-400 mb-2 text-xs uppercase tracking-wider" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Pricing ({getDayType() === 'weekend' ? 'Weekend' : 'Weekday'})</div>
-          <div className="space-y-1.5 text-xs font-semibold" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+        <div className="mb-4 sm:mb-5 p-2 sm:p-3 bg-slate-800/50 rounded-lg border border-purple-500/20">
+          <div className="font-semibold text-purple-400 mb-2 text-[10px] sm:text-xs uppercase tracking-wider" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Pricing ({getDayType() === 'weekend' ? 'Weekend' : 'Weekday'})</div>
+          <div className="space-y-1 sm:space-y-1.5 text-[10px] sm:text-xs font-semibold" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
             <div className="flex justify-between text-slate-300">
               <span className="text-cyan-400">PS5:</span>
               <span className="text-cyan-400">{getRate(GAME_TYPES.PLAYSTATION)}Rs/hr</span>
@@ -112,7 +106,7 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
           </div>
         </div>
 
-        <div className="space-y-2 mb-3 max-h-80 overflow-y-auto">
+        <div className="space-y-2 mb-3 max-h-60 sm:max-h-80 overflow-y-auto">
           {stations.filter(station => (station.isDone === true) && (station.elapsedTime || 0) > 0).length === 0 ? (
             <div className="text-center py-8 text-slate-500 text-sm font-semibold" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
               No completed sessions yet.<br />
@@ -136,9 +130,9 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
           const extraControllerCost = extraControllers * getExtraControllerRate()
           const snacksCost = (cokeBottleCount * getCokeBottleRate()) + (cokeCanCount * getCokeCanRate())
           const totalCost = baseCost + extraControllerCost + snacksCost
-          const isSelected = selectedStations.includes(station.id)
+          const isSelected = selectedStation === station.id
 
-          const isHighlighted = highlightedStations.includes(station.id)
+          const isHighlighted = highlightedStation === station.id
           
           return (
             <div
@@ -155,38 +149,39 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
                 animation: isHighlighted ? 'pulse 0.5s ease-in-out 2' : 'none'
               }}
             >
-              <label className="flex items-center gap-2 p-2 cursor-pointer">
+              <label className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 cursor-pointer">
                 <input
-                  type="checkbox"
+                  type="radio"
+                  name="billing-station"
                   checked={isSelected}
-                  onChange={() => toggleStation(station.id)}
-                  className="w-4 h-4 text-orange-500 rounded focus:ring-orange-500 focus:ring-2 flex-shrink-0 bg-white border-gray-300"
+                  onChange={() => selectStation(station.id)}
+                  className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-500 focus:ring-orange-500 focus:ring-2 flex-shrink-0 bg-white border-gray-300"
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="font-bold text-sm text-cyan-400 truncate" style={{ fontFamily: 'Orbitron, sans-serif' }}>{station.name}</div>
-                    <span className="text-[10px] bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded font-semibold uppercase tracking-wider border border-orange-500/30" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Done</span>
+                  <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
+                    <div className="font-bold text-xs sm:text-sm text-cyan-400 truncate" style={{ fontFamily: 'Orbitron, sans-serif' }}>{station.name}</div>
+                    <span className="text-[9px] sm:text-[10px] bg-orange-500/20 text-orange-400 px-1.5 sm:px-2 py-0.5 rounded font-semibold uppercase tracking-wider border border-orange-500/30" style={{ fontFamily: 'Rajdhani, sans-serif' }}>Done</span>
                   </div>
                   {station.customerName && (
-                    <div className="text-xs text-slate-400 font-semibold mt-0.5" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
-                      👤 {station.customerName}
+                    <div className="text-[10px] sm:text-xs text-slate-400 font-semibold mt-0.5 flex flex-wrap gap-1 sm:gap-2" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+                      <span>👤 {station.customerName}</span>
                       {station.startTime && (
-                        <span className="ml-2 text-cyan-300">
+                        <span className="text-cyan-300">
                           🕐 {station.startTime}
                         </span>
                       )}
                       {station.endTime && (
-                        <span className="ml-2 text-orange-300">
+                        <span className="text-orange-300">
                           🕐 {station.endTime}
                         </span>
                       )}
                     </div>
                   )}
-                  <div className="text-xs text-slate-500 font-semibold" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
+                  <div className="text-[10px] sm:text-xs text-slate-500 font-semibold" style={{ fontFamily: 'Rajdhani, sans-serif' }}>
                     {formatTime(elapsed)}
                   </div>
                 </div>
-                <div className="font-bold text-sm text-green-400 neon-green ml-2" style={{ 
+                <div className="font-bold text-xs sm:text-sm text-green-400 neon-green ml-1 sm:ml-2 shrink-0" style={{ 
                   fontFamily: 'Orbitron, sans-serif'
                 }}>{totalCost}Rs</div>
               </label>
@@ -282,7 +277,7 @@ const BillingPanel = ({ stations, onGenerateInvoice }) => {
           </div>
           <button
             onClick={handleGenerateInvoice}
-            disabled={selectedStations.length === 0}
+            disabled={!selectedStation}
             className="w-full px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-all duration-200 shadow-lg shadow-purple-500/25"
             style={{ fontFamily: 'Rajdhani, sans-serif' }}
           >

@@ -66,17 +66,23 @@ export const playAlarm = async (messageOrStationName = null, isWarning = false) 
     const audioContext = new (window.AudioContext || window.webkitAudioContext)()
     
     if (messageOrStationName) {
-      // Check if it's a full message (contains "hour", "bonus", or "completed")
+      // Check if it's a full message (contains "hour", "bonus", "completed", or "started")
       const isFullMessage = messageOrStationName.includes('hour') || 
                            messageOrStationName.includes('bonus') || 
-                           messageOrStationName.includes('completed')
+                           messageOrStationName.includes('completed') ||
+                           messageOrStationName.includes('started')
       
       if (isFullMessage) {
-        // Full milestone or minute completion message
+        // Full milestone, completion, or start message
         const message = messageOrStationName
         
-        // Play alarm sound - quieter for minute announcements, louder for hour milestones
-        const volume = messageOrStationName.includes('completed') ? 0.4 : 0.6
+        // Play alarm sound - quieter for completion/start announcements, louder for hour milestones
+        let volume = 0.6
+        if (messageOrStationName.includes('completed')) {
+          volume = 0.4
+        } else if (messageOrStationName.includes('started')) {
+          volume = 0.5
+        }
         await playAlarmSound(audioContext, volume)
         
         // Speak the message
