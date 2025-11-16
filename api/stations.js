@@ -90,7 +90,7 @@ export default async function handler(req, res) {
             })
           }
           
-          await client.query(`
+          const result = await client.query(`
             INSERT INTO stations (
               id, name, game_type, elapsed_time, is_running, is_done,
               extra_controllers, snacks, customer_name, start_time, end_time
@@ -119,6 +119,39 @@ export default async function handler(req, res) {
             startTime,
             endTime
           ]);
+          
+          // Verify the update by querying the database
+          const verifyResult = await client.query(
+            'SELECT elapsed_time, is_running, is_done, extra_controllers, customer_name, start_time, end_time FROM stations WHERE id = $1',
+            [station.id]
+          );
+          
+          if (verifyResult.rows.length > 0) {
+            const saved = verifyResult.rows[0];
+            // Log if values don't match what we tried to save
+            if (saved.elapsed_time !== elapsedTime || 
+                saved.is_running !== isRunning || 
+                saved.is_done !== isDone ||
+                saved.extra_controllers !== extraControllers ||
+                saved.customer_name !== customerName ||
+                saved.start_time !== startTime ||
+                saved.end_time !== endTime) {
+              console.log(`[API] ⚠️ Mismatch for station ${station.id}:`, {
+                expected: { elapsedTime, isRunning, isDone, extraControllers, customerName, startTime, endTime },
+                actual: {
+                  elapsed_time: saved.elapsed_time,
+                  is_running: saved.is_running,
+                  is_done: saved.is_done,
+                  extra_controllers: saved.extra_controllers,
+                  customer_name: saved.customer_name,
+                  start_time: saved.start_time,
+                  end_time: saved.end_time
+                }
+              });
+            } else {
+              console.log(`[API] ✅ Station ${station.id} saved correctly`);
+            }
+          }
         }
       }
 
