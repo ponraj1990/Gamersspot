@@ -18,10 +18,14 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
   const intervalRef = useRef(null)
   const timerStartTimeRef = useRef(null) // Track when timer actually started (timestamp)
   const lastUpdateTimeRef = useRef(null) // Track last update time for sync
-  const milestone5MinWarning = useRef(false) // 5 minutes before 1 hour (55 minutes)
+  const milestone5MinWarning1H = useRef(false) // 5 minutes before 1 hour (55 minutes)
   const milestone1Hour = useRef(false)
+  const milestone5MinWarning2H = useRef(false) // 5 minutes before 2 hours (115 minutes)
   const milestone2Hours = useRef(false)
+  const milestone5MinWarning3H = useRef(false) // 5 minutes before 3 hours (175 minutes)
   const milestone3Hours = useRef(false)
+  const milestone5MinWarning4H = useRef(false) // 5 minutes before 4 hours (235 minutes)
+  const milestone4Hours = useRef(false)
   
   // Test mode: Use seconds instead of minutes for quick testing
   // Enable by running in browser console: localStorage.setItem('testMode', 'true')
@@ -38,24 +42,60 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
       window[testKey] = (testSeconds) => {
         console.log(`[TEST] Setting ${station.name} elapsed time to ${testSeconds} seconds`)
         const currentTestMode = localStorage.getItem('testMode') === 'true'
-        const warningThreshold = currentTestMode ? 55 : 3300
-        const oneHourThreshold = currentTestMode ? 60 : 3600
+        const warning1H = currentTestMode ? 55 : 3300
+        const hour1 = currentTestMode ? 60 : 3600
+        const warning2H = currentTestMode ? 115 : 6900
+        const hour2 = currentTestMode ? 120 : 7200
+        const warning3H = currentTestMode ? 175 : 10500
+        const hour3 = currentTestMode ? 180 : 10800
+        const warning4H = currentTestMode ? 235 : 14100
+        const hour4 = currentTestMode ? 240 : 14400
         
-        // Reset milestone flags to allow re-testing
-        milestone5MinWarning.current = false
+        // Reset all milestone flags to allow re-testing
+        milestone5MinWarning1H.current = false
         milestone1Hour.current = false
+        milestone5MinWarning2H.current = false
+        milestone2Hours.current = false
+        milestone5MinWarning3H.current = false
+        milestone3Hours.current = false
+        milestone5MinWarning4H.current = false
+        milestone4Hours.current = false
         
         // Set elapsed time
         setElapsedTime(testSeconds)
         
         // Force milestone check after a brief delay to ensure state is updated
         setTimeout(() => {
-          if (testSeconds >= oneHourThreshold && !milestone1Hour.current) {
+          if (testSeconds >= hour4 && !milestone4Hours.current) {
+            milestone4Hours.current = true
+            const message = `${station.name} - you have completed 4 hours`
+            playAlarm(message, false)
+          } else if (testSeconds >= warning4H && !milestone5MinWarning4H.current && testSeconds < hour4) {
+            milestone5MinWarning4H.current = true
+            const message = `${station.name} - you have 5 minutes left for 4 hours`
+            playAlarm(message, false)
+          } else if (testSeconds >= hour3 && !milestone3Hours.current) {
+            milestone3Hours.current = true
+            const message = `${station.name} - you have completed 3 hours`
+            playAlarm(message, false)
+          } else if (testSeconds >= warning3H && !milestone5MinWarning3H.current && testSeconds < hour3) {
+            milestone5MinWarning3H.current = true
+            const message = `${station.name} - you have 5 minutes left for 3 hours`
+            playAlarm(message, false)
+          } else if (testSeconds >= hour2 && !milestone2Hours.current) {
+            milestone2Hours.current = true
+            const message = `${station.name} - you have completed 2 hours`
+            playAlarm(message, false)
+          } else if (testSeconds >= warning2H && !milestone5MinWarning2H.current && testSeconds < hour2) {
+            milestone5MinWarning2H.current = true
+            const message = `${station.name} - you have 5 minutes left for 2 hours`
+            playAlarm(message, false)
+          } else if (testSeconds >= hour1 && !milestone1Hour.current) {
             milestone1Hour.current = true
             const message = `${station.name} - you have completed 1 hour`
             playAlarm(message, false)
-          } else if (testSeconds >= warningThreshold && !milestone5MinWarning.current && testSeconds < oneHourThreshold) {
-            milestone5MinWarning.current = true
+          } else if (testSeconds >= warning1H && !milestone5MinWarning1H.current && testSeconds < hour1) {
+            milestone5MinWarning1H.current = true
             const message = `${station.name} - you have 5 minutes left for 1 hour`
             playAlarm(message, false)
           }
@@ -116,43 +156,49 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
           const dayType = getDayType()
           const isWeekendNoBonus = (gameType === GAME_TYPES.PLAYSTATION || gameType === GAME_TYPES.STEERING_WHEEL) && dayType === 'weekend'
           
-          // Initialize milestone refs based on current elapsed time
-          // Always announce missed milestones when component loads
-          if (hours >= 3 && !milestone3Hours.current) {
+          // Define thresholds (in test mode: seconds = minutes, otherwise normal)
+          const warning1H = isTestMode ? 55 : 3300  // 55 minutes
+          const hour1 = isTestMode ? 60 : 3600      // 1 hour
+          const warning2H = isTestMode ? 115 : 6900  // 115 minutes (5 min before 2h)
+          const hour2 = isTestMode ? 120 : 7200      // 2 hours
+          const warning3H = isTestMode ? 175 : 10500 // 175 minutes (5 min before 3h)
+          const hour3 = isTestMode ? 180 : 10800     // 3 hours
+          const warning4H = isTestMode ? 235 : 14100 // 235 minutes (5 min before 4h)
+          const hour4 = isTestMode ? 240 : 14400     // 4 hours
+          
+          // Check milestones in reverse order (highest first)
+          if (currentElapsedTime >= hour4 && !milestone4Hours.current) {
+            milestone4Hours.current = true
+            const message = `${station.name} - you have completed 4 hours`
+            playAlarm(message, false)
+          } else if (currentElapsedTime >= warning4H && !milestone5MinWarning4H.current && currentElapsedTime < hour4) {
+            milestone5MinWarning4H.current = true
+            const message = `${station.name} - you have 5 minutes left for 4 hours`
+            playAlarm(message, false)
+          } else if (currentElapsedTime >= hour3 && !milestone3Hours.current) {
             milestone3Hours.current = true
-            // Announce 3 hour milestone even if we missed it
-            if (isWeekendNoBonus) {
-              const message = `${station.name} - 3 hours played`
-              playAlarm(message, false)
-            } else {
-              const message = `${station.name} - 3 hours played, 1 hour bonus time`
-              playAlarm(message, false)
-            }
-          } else if (hours >= 2 && !milestone2Hours.current) {
+            const message = `${station.name} - you have completed 3 hours`
+            playAlarm(message, false)
+          } else if (currentElapsedTime >= warning3H && !milestone5MinWarning3H.current && currentElapsedTime < hour3) {
+            milestone5MinWarning3H.current = true
+            const message = `${station.name} - you have 5 minutes left for 3 hours`
+            playAlarm(message, false)
+          } else if (currentElapsedTime >= hour2 && !milestone2Hours.current) {
             milestone2Hours.current = true
-            // Announce 2 hour milestone even if we missed it
-            if (isWeekendNoBonus) {
-              const message = `${station.name} - 2 hours played`
-              playAlarm(message, false)
-            } else {
-              const message = `${station.name} - 2 hours played, 30 minutes bonus time`
-              playAlarm(message, false)
-            }
-          } else if (hours >= 1 && !milestone1Hour.current) {
+            const message = `${station.name} - you have completed 2 hours`
+            playAlarm(message, false)
+          } else if (currentElapsedTime >= warning2H && !milestone5MinWarning2H.current && currentElapsedTime < hour2) {
+            milestone5MinWarning2H.current = true
+            const message = `${station.name} - you have 5 minutes left for 2 hours`
+            playAlarm(message, false)
+          } else if (currentElapsedTime >= hour1 && !milestone1Hour.current) {
             milestone1Hour.current = true
-            // Announce 1 hour milestone even if we missed it
             const message = `${station.name} - you have completed 1 hour`
             playAlarm(message, false)
-          } else {
-            // Check 5 minute warning (55 minutes = 3300 seconds)
-            // In test mode: 55 seconds = 55 minutes
-            const warningThreshold = isTestMode ? 55 : 3300
-            if (currentElapsedTime >= warningThreshold && !milestone5MinWarning.current && hours < 1) {
-              milestone5MinWarning.current = true
-              // Announce 5 minute warning even if we missed it
-              const message = `${station.name} - you have 5 minutes left for 1 hour`
-              playAlarm(message, false)
-            }
+          } else if (currentElapsedTime >= warning1H && !milestone5MinWarning1H.current && currentElapsedTime < hour1) {
+            milestone5MinWarning1H.current = true
+            const message = `${station.name} - you have 5 minutes left for 1 hour`
+            playAlarm(message, false)
           }
         }
       }
@@ -167,54 +213,71 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
             const newTime = prev + timeSinceLastUpdate
             lastUpdateTimeRef.current = now
             
-            // Announce milestones for bonus time
-            // Note: PS5 and Steering Wheel games only get bonus time on weekdays (Monday-Friday)
-            const hours = newTime / 3600
-            const minutes = newTime / 60
-            const gameType = station.gameType || GAME_TYPES.PLAYSTATION
-            const dayType = getDayType()
-            const isWeekendNoBonus = (gameType === GAME_TYPES.PLAYSTATION || gameType === GAME_TYPES.STEERING_WHEEL) && dayType === 'weekend'
+            // Define thresholds (in test mode: seconds = minutes, otherwise normal)
+            const warning1H = isTestMode ? 55 : 3300   // 55 minutes
+            const hour1 = isTestMode ? 60 : 3600       // 1 hour
+            const warning2H = isTestMode ? 115 : 6900    // 115 minutes (5 min before 2h)
+            const hour2 = isTestMode ? 120 : 7200       // 2 hours
+            const warning3H = isTestMode ? 175 : 10500   // 175 minutes (5 min before 3h)
+            const hour3 = isTestMode ? 180 : 10800      // 3 hours
+            const warning4H = isTestMode ? 235 : 14100  // 235 minutes (5 min before 4h)
+            const hour4 = isTestMode ? 240 : 14400      // 4 hours
             
+            // Check milestones in order (lowest to highest)
             // 5 minute warning before 1 hour
-            // In test mode: 55 seconds = 55 minutes, otherwise 3300 seconds (55 minutes)
-            const warningThreshold = isTestMode ? 55 : 3300
-            const oneHourThreshold = isTestMode ? 60 : 3600
-            if (newTime >= warningThreshold && !milestone5MinWarning.current && newTime < oneHourThreshold) {
-              milestone5MinWarning.current = true
+            if (newTime >= warning1H && !milestone5MinWarning1H.current && newTime < hour1) {
+              milestone5MinWarning1H.current = true
               const message = `${station.name} - you have 5 minutes left for 1 hour`
               playAlarm(message, false)
             }
             
             // 1 hour milestone - announce completion
-            // In test mode: 60 seconds = 1 hour, otherwise 3600 seconds
-            if (newTime >= oneHourThreshold && !milestone1Hour.current) {
+            if (newTime >= hour1 && !milestone1Hour.current) {
               milestone1Hour.current = true
               const message = `${station.name} - you have completed 1 hour`
               playAlarm(message, false)
             }
             
-            // 2 hours milestone (7200 seconds) - only announce bonus on weekdays for PS5 and Steering Wheel
-            if (hours >= 2 && !milestone2Hours.current) {
-              milestone2Hours.current = true
-              if (isWeekendNoBonus) {
-                const message = `${station.name} - 2 hours played`
-                playAlarm(message, false)
-              } else {
-                const message = `${station.name} - 2 hours played, 30 minutes bonus time`
-                playAlarm(message, false)
-              }
+            // 5 minute warning before 2 hours
+            if (newTime >= warning2H && !milestone5MinWarning2H.current && newTime < hour2) {
+              milestone5MinWarning2H.current = true
+              const message = `${station.name} - you have 5 minutes left for 2 hours`
+              playAlarm(message, false)
             }
             
-            // 3 hours milestone (10800 seconds) - only announce bonus on weekdays for PS5 and Steering Wheel
-            if (hours >= 3 && !milestone3Hours.current) {
+            // 2 hours milestone - announce completion
+            if (newTime >= hour2 && !milestone2Hours.current) {
+              milestone2Hours.current = true
+              const message = `${station.name} - you have completed 2 hours`
+              playAlarm(message, false)
+            }
+            
+            // 5 minute warning before 3 hours
+            if (newTime >= warning3H && !milestone5MinWarning3H.current && newTime < hour3) {
+              milestone5MinWarning3H.current = true
+              const message = `${station.name} - you have 5 minutes left for 3 hours`
+              playAlarm(message, false)
+            }
+            
+            // 3 hours milestone - announce completion
+            if (newTime >= hour3 && !milestone3Hours.current) {
               milestone3Hours.current = true
-              if (isWeekendNoBonus) {
-                const message = `${station.name} - 3 hours played`
-                playAlarm(message, false)
-              } else {
-                const message = `${station.name} - 3 hours played, 1 hour bonus time`
-                playAlarm(message, false)
-              }
+              const message = `${station.name} - you have completed 3 hours`
+              playAlarm(message, false)
+            }
+            
+            // 5 minute warning before 4 hours
+            if (newTime >= warning4H && !milestone5MinWarning4H.current && newTime < hour4) {
+              milestone5MinWarning4H.current = true
+              const message = `${station.name} - you have 5 minutes left for 4 hours`
+              playAlarm(message, false)
+            }
+            
+            // 4 hours milestone - announce completion
+            if (newTime >= hour4 && !milestone4Hours.current) {
+              milestone4Hours.current = true
+              const message = `${station.name} - you have completed 4 hours`
+              playAlarm(message, false)
             }
             
             return newTime
@@ -317,10 +380,14 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
       setStartTime(null)
       timerStartTimeRef.current = null
       lastUpdateTimeRef.current = null
-      milestone5MinWarning.current = false
+      milestone5MinWarning1H.current = false
       milestone1Hour.current = false
+      milestone5MinWarning2H.current = false
       milestone2Hours.current = false
+      milestone5MinWarning3H.current = false
       milestone3Hours.current = false
+      milestone5MinWarning4H.current = false
+      milestone4Hours.current = false
       prevStationRef.current = { 
         elapsedTime: station.elapsedTime, 
         isRunning: station.isRunning, 

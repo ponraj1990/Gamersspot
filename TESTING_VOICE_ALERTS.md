@@ -21,8 +21,14 @@ Test mode makes **1 second = 1 minute**, so you can test in just 60 seconds!
 4. **Start a timer** on any station (e.g., PS5 Station 2)
 
 5. **Wait for the alerts:**
-   - At **55 seconds**: You'll hear "PS5 Station 2 - you have 5 minutes left for 1 hour"
-   - At **60 seconds**: You'll hear "PS5 Station 2 - you have completed 1 hour"
+   - At **55 seconds**: "PS5 Station 2 - you have 5 minutes left for 1 hour"
+   - At **60 seconds**: "PS5 Station 2 - you have completed 1 hour"
+   - At **115 seconds**: "PS5 Station 2 - you have 5 minutes left for 2 hours"
+   - At **120 seconds**: "PS5 Station 2 - you have completed 2 hours"
+   - At **175 seconds**: "PS5 Station 2 - you have 5 minutes left for 3 hours"
+   - At **180 seconds**: "PS5 Station 2 - you have completed 3 hours"
+   - At **235 seconds**: "PS5 Station 2 - you have 5 minutes left for 4 hours"
+   - At **240 seconds**: "PS5 Station 2 - you have completed 4 hours"
 
 6. **Disable Test Mode** when done:
    ```javascript
@@ -43,23 +49,45 @@ You can instantly set the elapsed time to test specific milestones without waiti
 2. **Find the station ID** you want to test
    - Station IDs are usually: 1, 2, 3, 4, 5 (for PS5 stations), 6 (Steering Wheel), 7 (System Game)
 
-3. **Test the 5-minute warning (55 minutes):**
-   ```javascript
-   // For PS5 Station 2 (assuming ID is 2)
-   window.testStationTime_2(3300)  // 3300 seconds = 55 minutes
-   ```
-
-4. **Test the 1-hour completion:**
-   ```javascript
-   window.testStationTime_2(3600)  // 3600 seconds = 1 hour
-   ```
-
-5. **Or test with test mode enabled (faster):**
+3. **Test the milestones (with test mode enabled - faster):**
    ```javascript
    localStorage.setItem('testMode', 'true')
    // Refresh page first, then:
-   window.testStationTime_2(55)   // 55 seconds = 55 minutes in test mode
-   window.testStationTime_2(60)   // 60 seconds = 1 hour in test mode
+   
+   // 1 Hour milestones
+   window.testStationTime_2(55)   // 5-minute warning before 1 hour
+   window.testStationTime_2(60)   // 1-hour completion
+   
+   // 2 Hour milestones
+   window.testStationTime_2(115)  // 5-minute warning before 2 hours
+   window.testStationTime_2(120)  // 2-hour completion
+   
+   // 3 Hour milestones
+   window.testStationTime_2(175)  // 5-minute warning before 3 hours
+   window.testStationTime_2(180)  // 3-hour completion
+   
+   // 4 Hour milestones
+   window.testStationTime_2(235)  // 5-minute warning before 4 hours
+   window.testStationTime_2(240)  // 4-hour completion
+   ```
+
+4. **Or test without test mode (using actual seconds):**
+   ```javascript
+   // 1 Hour milestones
+   window.testStationTime_2(3300)  // 55 minutes = 5-minute warning
+   window.testStationTime_2(3600) // 1 hour = completion
+   
+   // 2 Hour milestones
+   window.testStationTime_2(6900)  // 115 minutes = 5-minute warning
+   window.testStationTime_2(7200) // 2 hours = completion
+   
+   // 3 Hour milestones
+   window.testStationTime_2(10500) // 175 minutes = 5-minute warning
+   window.testStationTime_2(10800) // 3 hours = completion
+   
+   // 4 Hour milestones
+   window.testStationTime_2(14100) // 235 minutes = 5-minute warning
+   window.testStationTime_2(14400) // 4 hours = completion
    ```
 
 ### Available Test Functions:
@@ -77,30 +105,35 @@ You can instantly set the elapsed time to test specific milestones without waiti
 
 ## Quick Test Examples
 
-### Example 1: Test 5-minute warning instantly
+### Example 1: Test 1-hour milestones
 ```javascript
 // Enable test mode
 localStorage.setItem('testMode', 'true')
 // Refresh page, then:
-window.testStationTime_2(55)  // Instantly triggers 5-minute warning
+window.testStationTime_2(55)  // 5-minute warning before 1 hour
+window.testStationTime_2(60)  // 1-hour completion
 ```
 
-### Example 2: Test 1-hour completion instantly
+### Example 2: Test 2-hour milestones
 ```javascript
-// Enable test mode
 localStorage.setItem('testMode', 'true')
 // Refresh page, then:
-window.testStationTime_2(60)  // Instantly triggers 1-hour completion
+window.testStationTime_2(115)  // 5-minute warning before 2 hours
+window.testStationTime_2(120)  // 2-hour completion
 ```
 
-### Example 3: Test both in sequence
+### Example 3: Test all milestones in sequence
 ```javascript
-// Enable test mode
 localStorage.setItem('testMode', 'true')
 // Refresh page, then:
-window.testStationTime_2(55)  // First: 5-minute warning
-// Wait 5 seconds, then:
-window.testStationTime_2(60)  // Then: 1-hour completion
+window.testStationTime_2(55)   // 1-hour warning
+window.testStationTime_2(60)   // 1-hour completion
+window.testStationTime_2(115)  // 2-hour warning
+window.testStationTime_2(120)  // 2-hour completion
+window.testStationTime_2(175)  // 3-hour warning
+window.testStationTime_2(180)  // 3-hour completion
+window.testStationTime_2(235)  // 4-hour warning
+window.testStationTime_2(240)  // 4-hour completion
 ```
 
 ---
