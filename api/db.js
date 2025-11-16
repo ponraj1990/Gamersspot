@@ -4,6 +4,7 @@
  */
 
 let dbClient = null;
+let dbPool = null;
 
 export async function getDbClient() {
   // Check if we're in Vercel environment
@@ -16,23 +17,38 @@ export async function getDbClient() {
     const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
     
     if (!connectionString) {
+      console.error('POSTGRES_URL or DATABASE_URL environment variable is required for Vercel deployment');
       throw new Error('POSTGRES_URL or DATABASE_URL environment variable is required for Vercel deployment');
     }
     
-    // Use pg client for Supabase connection
-    const { Client } = await import('pg');
+    // Use connection pool for serverless (better for Vercel)
+    const { Pool } = await import('pg');
     
-    const client = new Client({
-      connectionString: connectionString,
-      ssl: {
-        rejectUnauthorized: false // Required for Supabase
-      }
-    });
+    // Create pool if it doesn't exist
+    if (!dbPool) {
+      dbPool = new Pool({
+        connectionString: connectionString,
+        ssl: {
+          rejectUnauthorized: false // Required for Supabase
+        },
+        max: 1, // Limit connections for serverless
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000
+      });
+      
+      // Handle pool errors
+      dbPool.on('error', (err) => {
+        console.error('Unexpected error on idle client', err);
+      });
+    }
     
-    await client.connect();
+    // Get a client from the pool
+    const client = await dbPool.connect();
+    
     return {
       client,
-      isVercel: true
+      isVercel: true,
+      release: () => client.release() // Return release function
     };
   } else {
     // Use local PostgreSQL client for development
@@ -48,10 +64,17 @@ export async function getDbClient() {
       connectionString: connectionString
     });
     
-    await client.connect();
+    try {
+      await client.connect();
+    } catch (error) {
+      console.error('Database connection error:', error);
+      throw error;
+    }
+    
     return {
       client,
-      isVercel: false
+      isVercel: false,
+      release: null
     };
   }
 }
@@ -59,9 +82,11 @@ export async function getDbClient() {
 export async function closeDbClient(db) {
   if (db && db.client) {
     try {
-      if (db.isVercel) {
-        await db.client.end();
+      if (db.isVercel && db.release) {
+        // Release client back to pool (don't close it)
+        db.release();
       } else {
+        // Close client for local development
         await db.client.end();
       }
     } catch (error) {

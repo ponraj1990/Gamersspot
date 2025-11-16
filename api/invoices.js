@@ -15,6 +15,11 @@ export default async function handler(req, res) {
   try {
     db = await getDbClient();
     const client = db.client;
+    
+    if (!client) {
+      console.error('Database client is null');
+      return res.status(500).json({ error: 'Database connection failed' });
+    }
 
     if (req.method === 'GET') {
       // Get all invoices or a specific invoice
@@ -98,7 +103,18 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
     console.error('Database error:', error);
-    await closeDbClient(db);
-    return res.status(500).json({ error: error.message });
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail
+    });
+    if (db) {
+      await closeDbClient(db);
+    }
+    return res.status(500).json({ 
+      error: error.message || 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 }
