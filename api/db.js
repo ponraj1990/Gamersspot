@@ -21,29 +21,69 @@ export async function getDbClient() {
       throw new Error('POSTGRES_URL or DATABASE_URL environment variable is required for Vercel deployment');
     }
     
+    // Log connection string (without password) for debugging
+    const connectionStringForLog = connectionString.replace(/:[^:@]+@/, ':****@');
+    console.log('Attempting to connect with:', connectionStringForLog);
+    
+    // Check if using pooled connection (recommended for serverless)
+    const isPooledConnection = connectionString.includes('pooler.supabase.com') || connectionString.includes(':6543');
+    if (!isPooledConnection && connectionString.includes('db.') && connectionString.includes('.supabase.co')) {
+      console.warn('WARNING: Using direct connection. Consider using pooled connection for better serverless performance.');
+      console.warn('Get pooled connection string from Supabase Dashboard → Settings → Database → Connection pooling');
+    }
+    
     // Use connection pool for serverless (better for Vercel)
     const { Pool } = await import('pg');
     
     // Create pool if it doesn't exist
     if (!dbPool) {
-      dbPool = new Pool({
-        connectionString: connectionString,
-        ssl: {
-          rejectUnauthorized: false // Required for Supabase
-        },
-        max: 1, // Limit connections for serverless
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000
-      });
-      
-      // Handle pool errors
-      dbPool.on('error', (err) => {
-        console.error('Unexpected error on idle client', err);
-      });
+      try {
+        dbPool = new Pool({
+          connectionString: connectionString,
+          ssl: {
+            rejectUnauthorized: false // Required for Supabase
+          },
+          max: 1, // Limit connections for serverless
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 10000
+        });
+        
+        // Handle pool errors
+        dbPool.on('error', (err) => {
+          console.error('Unexpected error on idle client', err);
+        });
+      } catch (poolError) {
+        console.error('Error creating connection pool:', poolError);
+        throw new Error(`Failed to create database connection pool: ${poolError.message}. Please verify your POSTGRES_URL environment variable in Vercel.`);
+      }
     }
     
     // Get a client from the pool
-    const client = await dbPool.connect();
+    let client;
+    try {
+      client = await dbPool.connect();
+    } catch (connectError) {
+      console.error('Error connecting to database:', connectError);
+      console.error('Connection error details:', {
+        code: connectError.code,
+        errno: connectError.errno,
+        syscall: connectError.syscall,
+        hostname: connectError.hostname || 'unknown',
+        message: connectError.message
+      });
+      
+      // Provide helpful error message
+      if (connectError.code === 'ENOTFOUND') {
+        throw new Error(
+          `Cannot resolve database hostname. This usually means:\n` +
+          `1. Your Supabase project might be paused - check Supabase Dashboard and restore if needed\n` +
+          `2. The connection string hostname is incorrect - verify in Supabase Dashboard → Settings → Database\n` +
+          `3. You should use the pooled connection string (pooler.supabase.com) instead of direct connection\n` +
+          `Original error: ${connectError.message}`
+        );
+      }
+      throw connectError;
+    }
     
     return {
       client,
