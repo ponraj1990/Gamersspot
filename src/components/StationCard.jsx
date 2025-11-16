@@ -136,8 +136,69 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
     if (isRunning) {
       // Initialize timer start time if not set
       if (!timerStartTimeRef.current) {
-        timerStartTimeRef.current = Date.now()
-        lastUpdateTimeRef.current = Date.now()
+        // If we have a startTime string, calculate the actual start timestamp
+        // Otherwise, use current time minus elapsed time
+        if (station.startTime) {
+          try {
+            const timeString = station.startTime
+            const timeMatch = timeString.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i)
+            
+            if (timeMatch) {
+              let hours = parseInt(timeMatch[1], 10)
+              const minutes = parseInt(timeMatch[2], 10)
+              const ampm = timeMatch[3]?.toUpperCase()
+              
+              // Convert to 24-hour format
+              if (ampm === 'PM' && hours !== 12) {
+                hours += 12
+              } else if (ampm === 'AM' && hours === 12) {
+                hours = 0
+              }
+              
+              // Create a date for today with the parsed start time
+              const today = new Date()
+              const startDate = new Date(
+                today.getFullYear(),
+                today.getMonth(),
+                today.getDate(),
+                hours,
+                minutes,
+                0,
+                0
+              )
+              
+              // If the parsed time is in the future, it means the timer started yesterday
+              const now = Date.now()
+              if (startDate.getTime() > now) {
+                startDate.setDate(startDate.getDate() - 1)
+              }
+              
+              // Use the actual start time
+              timerStartTimeRef.current = startDate.getTime()
+              lastUpdateTimeRef.current = now
+              
+              // Recalculate elapsed time from actual start time
+              const actualElapsedTime = Math.floor((now - startDate.getTime()) / 1000)
+              if (actualElapsedTime >= 0 && actualElapsedTime !== elapsedTime) {
+                console.log(`[Timer] Correcting elapsed time for ${station.name}: ${elapsedTime}s -> ${actualElapsedTime}s (started at ${timeString})`)
+                setElapsedTime(actualElapsedTime)
+              }
+            } else {
+              // Fallback: use current time minus elapsed time
+              timerStartTimeRef.current = Date.now() - (elapsedTime * 1000)
+              lastUpdateTimeRef.current = Date.now()
+            }
+          } catch (error) {
+            console.error(`Error parsing startTime for ${station.name}:`, error)
+            // Fallback: use current time minus elapsed time
+            timerStartTimeRef.current = Date.now() - (elapsedTime * 1000)
+            lastUpdateTimeRef.current = Date.now()
+          }
+        } else {
+          // No startTime string, use current time minus elapsed time
+          timerStartTimeRef.current = Date.now() - (elapsedTime * 1000)
+          lastUpdateTimeRef.current = Date.now()
+        }
         
         // Check milestones immediately if station already has elapsed time
         // This handles cases where the app was refreshed or station was already running
@@ -199,12 +260,79 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
       // Function to update elapsed time based on actual time passed
       const updateTimer = () => {
         const now = Date.now()
-        const timeSinceLastUpdate = Math.floor((now - lastUpdateTimeRef.current) / 1000)
         
-        if (timeSinceLastUpdate > 0) {
-          setElapsedTime((prev) => {
-            const newTime = prev + timeSinceLastUpdate
+        // Define thresholds (in seconds)
+        const warning1H = 3300   // 55 minutes
+        const hour1 = 3600       // 1 hour
+        const warning2H = 6900   // 115 minutes (5 min before 2h)
+        const hour2 = 7200       // 2 hours
+        const warning3H = 10500  // 175 minutes (5 min before 3h)
+        const hour3 = 10800     // 3 hours
+        const warning4H = 14100 // 235 minutes (5 min before 4h)
+        const hour4 = 14400     // 4 hours
+        
+        // Calculate elapsed time from the actual start time (more accurate)
+        if (timerStartTimeRef.current) {
+          const elapsedSinceStart = Math.floor((now - timerStartTimeRef.current) / 1000)
+          
+          // Check milestones using calculated elapsed time
+          if (elapsedSinceStart >= warning1H && !milestone5MinWarning1H.current && elapsedSinceStart < hour1) {
+            milestone5MinWarning1H.current = true
+            const message = `${station.name} - you have 5 minutes left for 1 hour`
+            playAlarm(message, false)
+          }
+          if (elapsedSinceStart >= hour1 && !milestone1Hour.current) {
+            milestone1Hour.current = true
+            const message = `${station.name} - you have completed 1 hour`
+            playAlarm(message, false)
+          }
+          if (elapsedSinceStart >= warning2H && !milestone5MinWarning2H.current && elapsedSinceStart < hour2) {
+            milestone5MinWarning2H.current = true
+            const message = `${station.name} - you have 5 minutes left for 2 hours`
+            playAlarm(message, false)
+          }
+          if (elapsedSinceStart >= hour2 && !milestone2Hours.current) {
+            milestone2Hours.current = true
+            const message = `${station.name} - you have completed 2 hours`
+            playAlarm(message, false)
+          }
+          if (elapsedSinceStart >= warning3H && !milestone5MinWarning3H.current && elapsedSinceStart < hour3) {
+            milestone5MinWarning3H.current = true
+            const message = `${station.name} - you have 5 minutes left for 3 hours`
+            playAlarm(message, false)
+          }
+          if (elapsedSinceStart >= hour3 && !milestone3Hours.current) {
+            milestone3Hours.current = true
+            const message = `${station.name} - you have completed 3 hours`
+            playAlarm(message, false)
+          }
+          if (elapsedSinceStart >= warning4H && !milestone5MinWarning4H.current && elapsedSinceStart < hour4) {
+            milestone5MinWarning4H.current = true
+            const message = `${station.name} - you have 5 minutes left for 4 hours`
+            playAlarm(message, false)
+          }
+          if (elapsedSinceStart >= hour4 && !milestone4Hours.current) {
+            milestone4Hours.current = true
+            const message = `${station.name} - you have completed 4 hours`
+            playAlarm(message, false)
+          }
+          
+          // Only update if the calculated time is different
+          if (elapsedSinceStart >= 0 && elapsedSinceStart !== elapsedTime) {
+            setElapsedTime(elapsedSinceStart)
             lastUpdateTimeRef.current = now
+          } else {
+            // Still update lastUpdateTimeRef even if elapsed time hasn't changed
+            lastUpdateTimeRef.current = now
+          }
+        } else {
+          // Fallback: use incremental update if timerStartTimeRef is not set
+          const timeSinceLastUpdate = Math.floor((now - lastUpdateTimeRef.current) / 1000)
+          
+          if (timeSinceLastUpdate > 0) {
+            setElapsedTime((prev) => {
+              const newTime = prev + timeSinceLastUpdate
+              lastUpdateTimeRef.current = now
             
             // Define thresholds (in seconds)
             const warning1H = 3300   // 55 minutes
