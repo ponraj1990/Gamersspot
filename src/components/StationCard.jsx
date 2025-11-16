@@ -48,6 +48,50 @@ const StationCard = ({ station, onUpdate, onDelete }) => {
       if (!timerStartTimeRef.current) {
         timerStartTimeRef.current = Date.now()
         lastUpdateTimeRef.current = Date.now()
+        
+        // Check milestones immediately if station already has elapsed time
+        // This handles cases where the app was refreshed or station was already running
+        const currentElapsedTime = elapsedTime || station.elapsedTime || 0
+        if (currentElapsedTime > 0) {
+          const hours = currentElapsedTime / 3600
+          const gameType = station.gameType || GAME_TYPES.PLAYSTATION
+          const dayType = getDayType()
+          const isWeekendNoBonus = (gameType === GAME_TYPES.PLAYSTATION || gameType === GAME_TYPES.STEERING_WHEEL) && dayType === 'weekend'
+          
+          // Initialize milestone refs based on current elapsed time
+          // Always announce missed milestones when component loads
+          if (hours >= 3 && !milestone3Hours.current) {
+            milestone3Hours.current = true
+            // Announce 3 hour milestone even if we missed it
+            if (isWeekendNoBonus) {
+              const message = `${station.name} - 3 hours played`
+              playAlarm(message, false)
+            } else {
+              const message = `${station.name} - 3 hours played, 1 hour bonus time`
+              playAlarm(message, false)
+            }
+          } else if (hours >= 2 && !milestone2Hours.current) {
+            milestone2Hours.current = true
+            // Announce 2 hour milestone even if we missed it
+            if (isWeekendNoBonus) {
+              const message = `${station.name} - 2 hours played`
+              playAlarm(message, false)
+            } else {
+              const message = `${station.name} - 2 hours played, 30 minutes bonus time`
+              playAlarm(message, false)
+            }
+          } else if (hours >= 1 && !milestone1Hour.current) {
+            milestone1Hour.current = true
+            // Announce 1 hour milestone even if we missed it
+            if (isWeekendNoBonus) {
+              const message = `${station.name} - 1 hour played`
+              playAlarm(message, false)
+            } else {
+              const message = `${station.name} - 1 hour played, 15 minutes bonus time`
+              playAlarm(message, false)
+            }
+          }
+        }
       }
 
       // Function to update elapsed time based on actual time passed
