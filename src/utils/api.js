@@ -84,6 +84,38 @@ export const invoicesAPI = {
   },
 };
 
+// Paid Events API
+export const paidEventsAPI = {
+  async create(invoiceNumber, stationIds, resetData) {
+    const response = await fetch(`${API_BASE_URL}/paid-events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        invoiceNumber,
+        stationIds,
+        resetData,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to create paid event');
+    }
+    return response.json();
+  },
+
+  async getRecent(since = null) {
+    const url = since 
+      ? `${API_BASE_URL}/paid-events?since=${since}`
+      : `${API_BASE_URL}/paid-events`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error('Failed to fetch paid events');
+    }
+    return response.json();
+  },
+};
+
 // Reports API
 export const reportsAPI = {
   async getUsageReport(date) {

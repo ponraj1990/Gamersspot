@@ -5,7 +5,7 @@ import InvoiceViewer from './components/InvoiceViewer'
 import PricingConfig from './components/PricingConfig'
 import Reports from './components/Reports'
 import { loadStations, saveStations } from './utils/storage'
-import { invoicesAPI } from './utils/api'
+import { invoicesAPI, paidEventsAPI } from './utils/api'
 import { GAME_TYPES, calculateCost } from './utils/pricing'
 
 function App() {
@@ -194,6 +194,115 @@ function App() {
     }
     
     fetchStations()
+    
+    // Set up polling for paid events (check every 3 seconds)
+    const checkPaidEvents = async () => {
+      try {
+        const since = new Date(lastPaidEventCheckRef.current).toISOString()
+        const paidEvents = await paidEventsAPI.getRecent(since)
+        
+        if (paidEvents && paidEvents.length > 0) {
+          console.log(`[Paid Events] Found ${paidEvents.length} paid event(s) from other browsers`)
+          
+          for (const event of paidEvents) {
+            const stationIds = event.stationIds || []
+            const resetData = event.resetData || []
+            
+            if (stationIds.length > 0) {
+              console.log(`[Paid Events] Processing paid event for stations: ${stationIds.join(', ')}`)
+              
+              // Set flag to prevent useEffect from interfering
+              isPaidResetRef.current = true
+              
+              // Clear any pending save timeout
+              if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current)
+                saveTimeoutRef.current = null
+              }
+              
+              // Reset stations based on paid event
+              setStations((prev) => {
+                const updated = prev.map((station) => {
+                  if (stationIds.includes(station.id)) {
+                    // Find the reset data for this station
+                    const stationResetData = Array.isArray(resetData) 
+                      ? resetData.find(r => r.id === station.id)
+                      : null
+                    
+                    if (stationResetData) {
+                      // Use the reset data from the paid event
+                      return {
+                        id: station.id,
+                        name: station.name,
+                        gameType: station.gameType,
+                        elapsedTime: stationResetData.elapsedTime || 0,
+                        isRunning: stationResetData.isRunning || false,
+                        isDone: stationResetData.isDone || false,
+                        extraControllers: stationResetData.extraControllers || 0,
+                        snacks: stationResetData.snacks || { cokeBottle: 0, cokeCan: 0 },
+                        customerName: stationResetData.customerName || '',
+                        startTime: stationResetData.startTime || null,
+                        endTime: stationResetData.endTime || null,
+                      }
+                    } else {
+                      // Fallback: reset to default values
+                      return {
+                        id: station.id,
+                        name: station.name,
+                        gameType: station.gameType,
+                        elapsedTime: 0,
+                        isRunning: false,
+                        isDone: false,
+                        extraControllers: 0,
+                        snacks: { cokeBottle: 0, cokeCan: 0 },
+                        customerName: '',
+                        startTime: null,
+                        endTime: null,
+                      }
+                    }
+                  }
+                  return station
+                })
+                
+                // Update prevStationsRef
+                prevStationsRef.current = updated.map(s => ({ ...s }))
+                
+                // Save to database
+                saveStations(updated).then(() => {
+                  console.log(`✅ Stations reset from paid event (invoice: ${event.invoiceNumber || 'N/A'})`)
+                }).catch(error => {
+                  console.error('❌ Error saving stations from paid event:', error)
+                })
+                
+                // Clear flag after a delay
+                setTimeout(() => {
+                  isPaidResetRef.current = false
+                }, 300)
+                
+                return updated
+              })
+            }
+          }
+        }
+        
+        // Update last check time
+        lastPaidEventCheckRef.current = Date.now()
+      } catch (error) {
+        console.error('[Paid Events] Error checking paid events:', error)
+      }
+    }
+    
+    // Check immediately, then every 3 seconds
+    checkPaidEvents()
+    paidEventCheckIntervalRef.current = setInterval(checkPaidEvents, 3000)
+    
+    // Cleanup interval on unmount
+    return () => {
+      if (paidEventCheckIntervalRef.current) {
+        clearInterval(paidEventCheckIntervalRef.current)
+        paidEventCheckIntervalRef.current = null
+      }
+    }
   }, [])
 
   // Throttle database saves to once per minute to reduce connection timeouts
@@ -202,6 +311,8 @@ function App() {
   const pendingStationsRef = useRef(null)
   const prevStationsRef = useRef([])
   const isPaidResetRef = useRef(false) // Flag to prevent useEffect from overwriting paid reset
+  const lastPaidEventCheckRef = useRef(Date.now()) // Track last paid event check time
+  const paidEventCheckIntervalRef = useRef(null) // Interval for checking paid events
   
   useEffect(() => {
     // Skip if this is a paid reset (we handle saving manually)
@@ -386,6 +497,33 @@ function App() {
         
         await saveStations(updatedStations)
         console.log('✅ Stations reset and saved to database after payment - Completed Sessions cleared')
+        
+        // Save paid event to intermediate table for multi-browser sync
+        try {
+          const resetStationIds = invoiceStations.map(s => s.id)
+          const resetData = updatedStations
+            .filter(s => resetStationIds.includes(s.id))
+            .map(s => ({
+              id: s.id,
+              name: s.name,
+              elapsedTime: s.elapsedTime,
+              isRunning: s.isRunning,
+              isDone: s.isDone,
+              extraControllers: s.extraControllers,
+              snacks: s.snacks,
+              customerName: s.customerName,
+              startTime: s.startTime,
+              endTime: s.endTime
+            }))
+          
+          // Try to get invoice number from invoiceStations or generate one
+          const invoiceNumber = invoiceStations[0]?.invoiceNumber || invoice?.invoiceNumber || `PAID-${Date.now()}`
+          await paidEventsAPI.create(invoiceNumber, resetStationIds, resetData)
+          console.log(`✅ Paid event saved to database for multi-browser sync (invoice: ${invoiceNumber})`)
+        } catch (paidEventError) {
+          console.error('❌ Error saving paid event (non-critical):', paidEventError)
+          // Don't fail the whole operation if paid event save fails
+        }
         
         // Verify completed sessions count after reset
         const completedCount = updatedStations.filter(s => s.isDone === true && (s.elapsedTime || 0) > 0).length
